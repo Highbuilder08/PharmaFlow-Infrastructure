@@ -67,3 +67,15 @@ output "rds_port" {
   description = "RDS MariaDB port"
   value       = aws_db_instance.pharmaflow.port
 }
+
+# ── EFS ───────────────────────────────────────────────
+
+output "efs_id" {
+  description = "PharmaFlow EFS file system ID"
+  value       = aws_efs_file_system.pharmaflow.id
+}
+
+output "efs_dns_name" {
+  description = "PharmaFlow EFS DNS name"
+  value       = aws_efs_file_system.pharmaflow.dns_name
+}
