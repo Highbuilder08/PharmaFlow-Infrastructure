@@ -19,7 +19,7 @@ resource "aws_instance" "django_base" {
   subnet_id                   = aws_subnet.private_a.id
   vpc_security_group_ids      = [aws_security_group.django.id]
   associate_public_ip_address = false
-  key_name                    = var.key_name
+  key_name                    = var.ec2_key_name
 
   # IMDSv2 강제 (Base AMI 로 구워질 서버이므로 처음부터 적용)
   metadata_options {
