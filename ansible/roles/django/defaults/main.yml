@@ -29,19 +29,37 @@ django_allowed_hosts:
   - 10.0.1.10          # Django EC2 사설 IP (팀장 output 나오면 교체)
   - 10.0.1.20          # Nginx EC2 사설 IP
 
-# ── DB (MariaDB) ──────────────────────────────────────────────────
+# ── DB (RDS MariaDB) ──────────────────────────────────────────────
+# 최종 구조에서는 EC2 자체 MariaDB가 아니라 RDS를 사용합니다.
+# 팀장님이 RDS를 만들면 terraform output 의 엔드포인트로 교체하세요.
+#   예) pharmaflow.cxxxxxx.ap-northeast-2.rds.amazonaws.com
 django_db_name: pharmaflow
 django_db_user: pharmaflow_user
-django_db_host: 10.0.2.10
+django_db_host: "REPLACE-WITH-RDS-ENDPOINT"
 django_db_port: 3306
 # django_db_password 는 여기 두지 않습니다. group_vars/vault.yml 참고.
 
 # ── 외부 API ──────────────────────────────────────────────────────
 # django_hira_service_key 도 vault 에서 관리
 
-# ── NFS (media 공유) ──────────────────────────────────────────────
-# 아직 NFS 서버가 없으면 false 로 두세요. true 면 media 를 NFS로 마운트합니다.
-django_nfs_enabled: false
+# ── media 공유 스토리지 ───────────────────────────────────────────
+# Django가 여러 대로 늘어나면(ASG) 업로드 파일을 EC2 로컬에 두면 안 됩니다.
+# Django-1에 올린 사진이 Django-2에는 없는 상태가 되기 때문입니다.
+#
+#   efs   : AWS EFS 마운트 (최종 구조)
+#   nfs   : 직접 띄운 NFS 서버 마운트
+#   local : 마운트 안 함 (단일 서버 검증용)
+#
+# settings.py 의 MEDIA_ROOT 가 BASE_DIR/media 이므로,
+# 그 경로에 마운트하면 앱 코드 수정 없이 그대로 동작합니다.
+django_media_storage: local
+
+# EFS 사용 시 (django_media_storage: efs)
+# 팀장님 terraform output 의 EFS DNS 이름으로 교체하세요.
+#   예) fs-0abc123.efs.ap-northeast-2.amazonaws.com
+django_efs_dns: "REPLACE-WITH-EFS-DNS"
+
+# 직접 띄운 NFS 서버 사용 시 (django_media_storage: nfs)
 django_nfs_server: 10.0.2.20
 django_nfs_export: /srv/pharmaflow/media
 

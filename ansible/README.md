@@ -90,6 +90,15 @@ Django EC2와 Nginx EC2가 분리되어 있으므로:
 - 팀원3의 Nginx `proxy_pass` 는 `http://<Django EC2 사설 IP>:8000` 이 되어야 합니다
 - 팀장님 보안그룹에서 Nginx EC2 → Django EC2 8000 포트 인바운드 허용이 필요합니다
 
+## 팀 확인이 필요한 미확정 사항
+
+| 항목 | 상태 |
+|---|---|
+| **Static → S3 + CloudFront** | **불가.** 앱의 `requirements.txt` 에 `django-storages`, `boto3` 가 없습니다. 앱 코드 변경이 선행되어야 하며 Ansible로 해결되지 않습니다. 현재 role 은 로컬 `collectstatic` 만 수행합니다 |
+| **ALB Health Check 경로** | 앱에 전용 헬스체크 URL이 없습니다(`/health` 등). `/` 는 로그인 리다이렉트가 날 수 있어 Target Group 이 Unhealthy 로 잡힐 수 있습니다. 앱에 헬스체크 뷰 추가를 요청하거나, 성공 판정 코드에 302를 포함시켜야 합니다 |
+| **Private Subnet 접속 경로** | Django EC2에 Public IP가 없으면 Ansible이 직접 붙지 못합니다. Bastion 경유(`ProxyJump`) 또는 SSM 중 무엇을 쓸지 팀 결정이 필요합니다 |
+| **RDS 엔드포인트 / EFS DNS** | `defaults/main.yml` 에 `REPLACE-WITH-...` 로 두었습니다. terraform output 나오면 교체 |
+
 ## 주의
 
 - `group_vars/vault.yml` 은 절대 커밋하지 마세요 (`.gitignore` 로 차단되어 있음)

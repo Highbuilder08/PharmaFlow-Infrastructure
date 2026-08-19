@@ -108,8 +108,19 @@
     - systemd 데몬 리로드
     - gunicorn 재시작
 
-# ── 8. NFS media 마운트 (선택) ────────────────────────────────────
-- name: media 디렉터리 NFS 마운트
+# ── 8. media 공유 스토리지 마운트 ─────────────────────────────────
+# EFS는 NFSv4.1 프로토콜을 씁니다. 권장 마운트 옵션은 AWS 문서 기준입니다.
+- name: media 디렉터리에 EFS 마운트
+  become: true
+  mount:
+    path: "{{ django_app_dir }}/media"
+    src: "{{ django_efs_dns }}:/"
+    fstype: nfs4
+    opts: nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport,_netdev
+    state: mounted
+  when: django_media_storage == 'efs'
+
+- name: media 디렉터리에 NFS 마운트
   become: true
   mount:
     path: "{{ django_app_dir }}/media"
@@ -117,7 +128,7 @@
     fstype: nfs
     opts: defaults,_netdev
     state: mounted
-  when: django_nfs_enabled | bool
+  when: django_media_storage == 'nfs'
 
 # ── 9. Django 관리 명령 ───────────────────────────────────────────
 # 운영매뉴얼 8장의 migrate / collectstatic 절차
