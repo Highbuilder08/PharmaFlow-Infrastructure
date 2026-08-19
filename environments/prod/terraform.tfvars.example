@@ -1,2 +1,6 @@
 admin_cidr   = "YOUR_PUBLIC_IP/32"
 ec2_key_name = "YOUR_EC2_KEY_PAIR_NAME"
+
+db_name     = "pharmaflow"
+db_username = "YOUR_DB_USERNAME"
+db_password = "YOUR_DB_PASSWORD"
