@@ -1,0 +1,39 @@
+{{ ansible_managed | comment }}
+# systemd 서비스 유닛 - Gunicorn 으로 Django 실행
+# 관리: systemctl {status|restart} {{ django_service_name }}
+# 로그: journalctl -u {{ django_service_name }}
+
+[Unit]
+Description=PharmaFlow Django (Gunicorn)
+# network.target 은 "네트워크 설정 시작됨"까지만 보장합니다.
+# RDS/EFS 처럼 네트워크 너머에 붙어야 하므로 실제 연결이 끝난 뒤에 뜨게 합니다.
+After=network-online.target
+Wants=network-online.target
+{% if django_media_storage in ['efs', 'nfs'] %}
+# media 가 원격 스토리지 마운트일 때는 마운트가 끝난 뒤에 기동해야 합니다.
+RequiresMountsFor={{ django_app_dir }}/media
+{% endif %}
+
+[Service]
+Type=notify
+User={{ django_user }}
+Group={{ django_user }}
+WorkingDirectory={{ django_app_dir }}
+
+# .env 파일의 값들을 환경변수로 주입 (SECRET_KEY, DB 접속정보 등)
+EnvironmentFile={{ django_app_dir }}/.env
+
+ExecStart={{ django_venv_dir }}/bin/gunicorn \
+    --config {{ django_app_dir }}/gunicorn.conf.py \
+    {{ django_wsgi_module }}
+
+ExecReload=/bin/kill -s HUP $MAINPID
+Restart=always
+RestartSec=5
+
+# accesslog/errorlog 가 "-" 라서 표준출력이 journald 로 수집됨
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
