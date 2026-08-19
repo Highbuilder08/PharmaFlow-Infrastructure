@@ -49,3 +49,33 @@ output "nat_public_ip" {
   description = "NAT Instance 공인 IP"
   value       = aws_instance.nat.public_ip
 }
+
+# ── Nginx ───────────────────────────────────────────────
+output "nginx_base_private_ip" {
+  description = "Private IP address of the Nginx base instance"
+  value       = aws_instance.nginx.private_ip
+}
+
+# ── RDS ───────────────────────────────────────────────
+
+output "rds_endpoint" {
+  description = "RDS MariaDB endpoint"
+  value       = aws_db_instance.pharmaflow.address
+}
+
+output "rds_port" {
+  description = "RDS MariaDB port"
+  value       = aws_db_instance.pharmaflow.port
+}
+
+# ── EFS ───────────────────────────────────────────────
+
+output "efs_id" {
+  description = "PharmaFlow EFS file system ID"
+  value       = aws_efs_file_system.pharmaflow.id
+}
+
+output "efs_dns_name" {
+  description = "PharmaFlow EFS DNS name"
+  value       = aws_efs_file_system.pharmaflow.dns_name
+}
