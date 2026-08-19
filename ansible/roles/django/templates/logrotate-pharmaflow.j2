@@ -1,0 +1,22 @@
+{{ ansible_managed | comment }}
+# Django 애플리케이션 로그 회전 설정
+#
+# 원본: 앱 저장소 deploy/logrotate/pharmaflow
+#       (원본은 개발 PC 기준 /home/tester 경로 + tester 계정이라 EC2 에서 그대로 못 씁니다.
+#        여기서 실제 배포 경로와 계정으로 값을 채웁니다.)
+#
+# gunicorn 로그는 파일이 아니라 journald 로 갑니다 → journalctl -u {{ django_service_name }}
+# 따라서 여기서 다루는 것은 settings.py 의 LOGGING 이 남기는 django.log 뿐입니다.
+#
+# 확인:  sudo logrotate -d /etc/logrotate.d/pharmaflow
+
+{{ django_app_dir }}/logs/django.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    # WatchedFileHandler 를 쓰므로 회전 후 postrotate 로 재시작할 필요가 없습니다.
+    create 0640 {{ django_user }} {{ django_user }}
+}

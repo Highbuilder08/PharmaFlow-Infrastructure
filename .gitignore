@@ -30,6 +30,7 @@ override.tf.json
 
 # Ansible
 ansible/group_vars/vault.yml
+ansible/group_vars/**/vault.yml
 ansible/**/*.retry
 ansible/inventory/*.local.ini
 

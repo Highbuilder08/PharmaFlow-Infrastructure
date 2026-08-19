@@ -5,7 +5,14 @@
 
 [Unit]
 Description=PharmaFlow Django (Gunicorn)
-After=network.target
+# network.target 은 "네트워크 설정 시작됨"까지만 보장합니다.
+# RDS/EFS 처럼 네트워크 너머에 붙어야 하므로 실제 연결이 끝난 뒤에 뜨게 합니다.
+After=network-online.target
+Wants=network-online.target
+{% if django_media_storage in ['efs', 'nfs'] %}
+# media 가 원격 스토리지 마운트일 때는 마운트가 끝난 뒤에 기동해야 합니다.
+RequiresMountsFor={{ django_app_dir }}/media
+{% endif %}
 
 [Service]
 Type=notify

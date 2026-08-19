@@ -1,1 +1,2 @@
-admin_cidr = "<실제 관리자 공인 IP>/32"S
+admin_cidr = "<실제 관리자 공인 IP>/32"
+key_name   = "pharmaflow-infra-key"   # Bastion 에 쓰인 것과 같은 키페어

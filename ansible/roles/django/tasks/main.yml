@@ -16,8 +16,24 @@
     name: "{{ django_apt_packages }}"
     state: present
 
-# ── 2. 디렉터리 ───────────────────────────────────────────────────
-- name: 앱 디렉터리 생성
+# ── 2. 소스 코드 ──────────────────────────────────────────────────
+# ⚠️ 반드시 디렉터리 생성보다 먼저 와야 합니다.
+#    git clone 은 대상 디렉터리가 "없거나 비어 있을 때"만 성공합니다.
+#    app_dir/media 를 먼저 만들어두면 app_dir 이 비어있지 않게 되어
+#    "fatal: destination path already exists and is not an empty directory" 로 실패합니다.
+- name: PharmaFlow 소스 받기
+  become: true
+  become_user: "{{ django_user }}"
+  git:
+    repo: "{{ django_repo_url }}"
+    dest: "{{ django_app_dir }}"
+    version: "{{ django_repo_branch }}"
+    force: true
+  notify: gunicorn 재시작
+
+# ── 3. 디렉터리 ───────────────────────────────────────────────────
+# 저장소에 이미 있는 경로지만, 소유권/권한을 확정해 둡니다.
+- name: 앱 디렉터리 권한 정리
   become: true
   file:
     path: "{{ item }}"
@@ -29,17 +45,6 @@
     - "{{ django_app_dir }}"
     - "{{ django_app_dir }}/media"
     - "{{ django_app_dir }}/logs"
-
-# ── 3. 소스 코드 ──────────────────────────────────────────────────
-- name: PharmaFlow 소스 받기
-  become: true
-  become_user: "{{ django_user }}"
-  git:
-    repo: "{{ django_repo_url }}"
-    dest: "{{ django_app_dir }}"
-    version: "{{ django_repo_branch }}"
-    force: true
-  notify: gunicorn 재시작
 
 # ── 4. 파이썬 가상환경 ────────────────────────────────────────────
 # mysqlclient 컴파일 때문에 1번 단계의 패키지가 반드시 먼저 깔려 있어야 합니다.
@@ -130,37 +135,70 @@
     state: mounted
   when: django_media_storage == 'nfs'
 
+# 마운트하면 그 폴더의 소유자는 원격 스토리지 쪽 값으로 바뀝니다.
+# Django(=ubuntu)가 업로드 파일을 쓸 수 있어야 하므로 다시 맞춰줍니다.
+- name: 마운트된 media 소유권 보정
+  become: true
+  file:
+    path: "{{ django_app_dir }}/media"
+    state: directory
+    owner: "{{ django_user }}"
+    group: "{{ django_user }}"
+  when: django_media_storage in ['efs', 'nfs']
+
 # ── 9. Django 관리 명령 ───────────────────────────────────────────
 # 운영매뉴얼 8장의 migrate / collectstatic 절차
-- name: DB 마이그레이션
+#
+# ⚠️ environment: 가 반드시 필요합니다.
+#    .env 파일은 systemd 의 EnvironmentFile 로만 읽힙니다.
+#    Ansible 의 command 태스크는 그 파일을 모르기 때문에, 환경변수를 여기서
+#    따로 넣어주지 않으면 settings.py 가 아래로 즉시 죽습니다.
+#      RuntimeError: DJANGO_SECRET_KEY 환경변수가 필요합니다.
+- name: Django 관리 명령 실행
   become: true
   become_user: "{{ django_user }}"
-  command: "{{ django_venv_dir }}/bin/python manage.py migrate --noinput"
-  args:
-    chdir: "{{ django_app_dir }}"
-  register: _migrate
-  changed_when: "'No migrations to apply' not in _migrate.stdout"
+  environment:
+    DJANGO_SECRET_KEY: "{{ django_secret_key }}"
+    DJANGO_DEBUG: "{{ django_debug }}"
+    DJANGO_ALLOWED_HOSTS: "{{ django_allowed_hosts | join(',') }}"
+    DB_NAME: "{{ django_db_name }}"
+    DB_USER: "{{ django_db_user }}"
+    DB_PASSWORD: "{{ django_db_password }}"
+    DB_HOST: "{{ django_db_host }}"
+    DB_PORT: "{{ django_db_port }}"
+    LOG_LEVEL: "{{ django_log_level }}"
+  block:
+    - name: DB 마이그레이션
+      command: "{{ django_venv_dir }}/bin/python manage.py migrate --noinput"
+      args:
+        chdir: "{{ django_app_dir }}"
+      register: _migrate
+      changed_when: "'No migrations to apply' not in _migrate.stdout"
 
-- name: 정적 파일 수집
-  become: true
-  become_user: "{{ django_user }}"
-  command: "{{ django_venv_dir }}/bin/python manage.py collectstatic --noinput"
-  args:
-    chdir: "{{ django_app_dir }}"
-  register: _collectstatic
-  changed_when: "'0 static files copied' not in _collectstatic.stdout"
+    - name: 정적 파일 수집
+      command: "{{ django_venv_dir }}/bin/python manage.py collectstatic --noinput"
+      args:
+        chdir: "{{ django_app_dir }}"
+      register: _collectstatic
+      changed_when: "'0 static files copied' not in _collectstatic.stdout"
 
 # ── 10. 로그 회전 ─────────────────────────────────────────────────
-# 앱 저장소가 제공하는 설정을 그대로 배치 (deploy/logrotate/pharmaflow)
+# 앱 저장소의 deploy/logrotate/pharmaflow 를 그대로 복사하면 안 됩니다.
+# 그 파일은 개발 PC 기준으로 /home/tester/... 경로와 tester 계정이 박혀 있어서
+# EC2(ubuntu 계정)에서는 회전이 동작하지 않습니다. 템플릿으로 값을 채워 넣습니다.
 - name: logrotate 설정 배치
   become: true
-  copy:
-    src: "{{ django_app_dir }}/deploy/logrotate/pharmaflow"
+  template:
+    src: logrotate-pharmaflow.j2
     dest: /etc/logrotate.d/pharmaflow
-    remote_src: true            # 파일이 원격 서버에 이미 있음(git clone 으로 받음)
     owner: root
     group: root
     mode: "0644"
+
+- name: logrotate 설정 문법 검사
+  become: true
+  command: logrotate -d /etc/logrotate.d/pharmaflow
+  changed_when: false
 
 # ── 11. 서비스 기동 ───────────────────────────────────────────────
 - name: pharmaflow 서비스 활성화 및 시작

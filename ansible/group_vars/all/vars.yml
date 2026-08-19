@@ -1,0 +1,35 @@
+---
+# 모든 서버에 공통 적용되는 변수 (비밀값 아님 - 커밋해도 됨)
+#
+# ⚠️ 비밀번호·API 키는 여기 쓰지 마세요. 같은 폴더의 vault.yml 에 넣습니다.
+#    vault.yml 은 .gitignore 로 커밋이 차단되어 있습니다.
+#
+# ⚠️ group_vars 는 "폴더/파일 이름 = 그룹 이름" 규칙으로만 로드됩니다.
+#    group_vars/all/ 아래 파일들은 모든 호스트에 적용됩니다.
+#    (예전처럼 group_vars/vault.yml 로 두면 'vault' 라는 그룹이 없어서
+#     그 파일은 통째로 무시됩니다. 확인 방법: ansible-inventory --host django-01)
+
+# ── 서버 사설 IP ──────────────────────────────────────────
+# VPC 10.23.0.0/16 / Private A 10.23.11.0/24 / Private C 10.23.12.0/24
+# 팀장님 terraform output 이 나오면 실제 값으로 교체하세요.
+#   cd environments/prod && terraform output django_base_private_ip
+django_private_ip: 10.23.11.10      # ← terraform output 후 교체
+nginx_private_ip: 10.23.11.20       # ← 팀원3 EC2, terraform output 후 교체
+
+# ── Django ALLOWED_HOSTS ──────────────────────────────────
+# 초기 구축 단계: Nginx 가 Django 사설 IP 로 직접 proxy_pass 하므로 두 IP 로 충분합니다.
+# 최종 구축 단계: Internal ALB 헬스체크가 Host 헤더에 "대상 인스턴스 IP" 를 넣고,
+#                ASG 인스턴스 IP 는 매번 바뀝니다. 그때는 아래 주석을 참고해
+#                동적 IP 를 추가하거나 앱에 /health 뷰를 넣어야 합니다.
+#   django_allowed_hosts_extra:
+#     - "{{ ansible_default_ipv4.address }}"
+django_allowed_hosts:
+  - "{{ django_private_ip }}"
+  - "{{ nginx_private_ip }}"
+
+# ── DB ────────────────────────────────────────────────────
+# django_db_host 는 여기에 두지 않습니다.
+# roles/django/defaults/main.yml 의 RDS 엔드포인트를 쓰고,
+# 실제 값이 나오면 그 파일만 고칩니다.
+# (group_vars 가 role defaults 보다 우선순위가 높아서, 여기에 EC2 MariaDB IP 를
+#  적어두면 RDS 설정이 조용히 덮어써집니다. 그래서 일부러 비워둡니다.)

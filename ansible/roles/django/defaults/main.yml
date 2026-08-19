@@ -1,6 +1,7 @@
 ---
 # django role 기본 변수
 # 여기 값은 group_vars/ 나 playbook 에서 덮어쓸 수 있습니다.
+# (우선순위: role defaults < group_vars < host_vars < -e 옵션)
 
 # ── 경로 ──────────────────────────────────────────────────────────
 # 운영매뉴얼(deploy/manual/운영매뉴얼.md)의 구조를 EC2 기본 계정(ubuntu)에 맞춘 것
@@ -16,28 +17,36 @@ django_service_name: pharmaflow
 django_wsgi_module: "mysite.wsgi:application"
 
 # ── Gunicorn ──────────────────────────────────────────────────────
-# ⚠️ 중요: Nginx가 "다른 EC2"에 있으므로 127.0.0.1 이 아니라 0.0.0.0 으로 열어야
-#    Nginx EC2에서 접근할 수 있습니다. (앱 저장소의 gunicorn.conf.py 기본값은 127.0.0.1)
-#    보안은 보안그룹에서 Nginx EC2만 8000 포트 허용하는 방식으로 잡습니다.
+# ⚠️ 중요: Nginx(그리고 나중엔 Internal ALB)가 "다른 EC2"에 있으므로
+#    127.0.0.1 이 아니라 0.0.0.0 으로 열어야 접근할 수 있습니다.
+#    (앱 저장소의 gunicorn.conf.py 기본값은 127.0.0.1)
+#    보안은 Django SG 에서 8000 인바운드를 제한하는 방식으로 잡습니다.
 django_gunicorn_bind: "0.0.0.0:8000"
 django_gunicorn_workers: 3
-django_log_level: info
+
+# ⚠️ 반드시 대문자입니다.
+#    이 값은 gunicorn 과 Django LOGGING 양쪽이 같이 씁니다.
+#      - gunicorn.conf.py : os.environ["LOG_LEVEL"].lower()  → 소문자로 바꿔 씀
+#      - settings.py      : LOGGING["root"]["level"] 에 그대로 들어감
+#    파이썬 logging 은 "info" 같은 소문자를 거부합니다.
+#      ValueError: Unable to configure root logger
+#    → 소문자로 두면 migrate 도 gunicorn 도 전부 죽습니다.
+django_log_level: INFO
 
 # ── Django 설정 ───────────────────────────────────────────────────
 django_debug: "False"
-django_allowed_hosts:
-  - 10.0.1.10          # Django EC2 사설 IP (팀장 output 나오면 교체)
-  - 10.0.1.20          # Nginx EC2 사설 IP
+# django_allowed_hosts 는 group_vars/all/vars.yml 에서 관리합니다.
+# (여기 적어두면 group_vars 가 항상 이겨서 헷갈리기만 합니다)
 
 # ── DB (RDS MariaDB) ──────────────────────────────────────────────
 # 최종 구조에서는 EC2 자체 MariaDB가 아니라 RDS를 사용합니다.
-# 팀장님이 RDS를 만들면 terraform output 의 엔드포인트로 교체하세요.
+# 팀장님이 RDS를 만들면 terraform output 의 엔드포인트로 여기를 교체하세요.
 #   예) pharmaflow.cxxxxxx.ap-northeast-2.rds.amazonaws.com
 django_db_name: pharmaflow
 django_db_user: pharmaflow_user
 django_db_host: "REPLACE-WITH-RDS-ENDPOINT"
 django_db_port: 3306
-# django_db_password 는 여기 두지 않습니다. group_vars/vault.yml 참고.
+# django_db_password 는 여기 두지 않습니다. group_vars/all/vault.yml 참고.
 
 # ── 외부 API ──────────────────────────────────────────────────────
 # django_hira_service_key 도 vault 에서 관리
@@ -48,7 +57,7 @@ django_db_port: 3306
 #
 #   efs   : AWS EFS 마운트 (최종 구조)
 #   nfs   : 직접 띄운 NFS 서버 마운트
-#   local : 마운트 안 함 (단일 서버 검증용)
+#   local : 마운트 안 함 (기준 서버 1대 검증용 = 지금 단계)
 #
 # settings.py 의 MEDIA_ROOT 가 BASE_DIR/media 이므로,
 # 그 경로에 마운트하면 앱 코드 수정 없이 그대로 동작합니다.
@@ -60,10 +69,13 @@ django_media_storage: local
 django_efs_dns: "REPLACE-WITH-EFS-DNS"
 
 # 직접 띄운 NFS 서버 사용 시 (django_media_storage: nfs)
-django_nfs_server: 10.0.2.20
+django_nfs_server: 10.23.11.30
 django_nfs_export: /srv/pharmaflow/media
 
 # ── OS 패키지 ─────────────────────────────────────────────────────
+# ⚠️ AMI 전제: Ubuntu 24.04 (Noble). Django 6.0 이 Python 3.12+ 를 요구합니다.
+#    22.04(Python 3.10)에서는 python3.12-venv 패키지가 없어 1단계부터 실패합니다.
+#
 # mysqlclient(파이썬 패키지)는 소스 빌드라서 컴파일러와 헤더가 필요합니다.
 # 이 목록에서 하나라도 빠지면 pip install 단계에서 반드시 실패합니다.
 django_apt_packages:

@@ -3,6 +3,22 @@
 Terraform이 만든 EC2 **안을 채우는** 단계입니다.
 (Terraform = 서버 생성 / Ansible = 서버 구성. 서로 자동 연동되지 않고 사람이 IP를 넘겨줍니다.)
 
+## 접속 경로
+
+Nginx / Django EC2는 Private Subnet에 있고 공인 IP가 없습니다.
+관리 트래픽은 전부 Bastion을 경유합니다.
+
+```
+Server1 (Ansible)
+   ↓ SSH
+Bastion (Public A)
+   ↓ SSH (ProxyJump)
+Django (Private A) / Nginx (Private A)
+```
+
+`inventory/prod.ini` 의 `ansible_ssh_common_args` 가 이 경유를 처리합니다.
+Bastion 공인 IP만 채워 넣으면 `ansible django -m ping` 이 그대로 동작합니다.
+
 ## 구조
 
 ```
@@ -10,13 +26,17 @@ ansible/
 ├── ansible.cfg                 기본 설정
 ├── inventory/prod.ini          대상 서버 목록  ← EC2 생성 후 IP 교체 필요
 ├── group_vars/
-│   ├── all.yml                 공통 변수 (비밀값 아님)
-│   └── vault.yml.example       비밀값 템플릿
+│   └── all/                    ⚠️ 폴더 이름 = 그룹 이름. 반드시 all/ 아래에 둘 것
+│       ├── vars.yml            공통 변수 (비밀값 아님)
+│       └── vault.yml.example   비밀값 템플릿
 ├── site.yml                    배포 지휘서
 └── roles/
     ├── django/                 팀원2 담당
     └── nginx/                  팀원3 담당 (예정)
 ```
+
+> `group_vars/vault.yml` 처럼 `all/` 밖에 두면 `vault` 라는 그룹이 없어서
+> 파일이 통째로 무시됩니다. 로드 여부는 `ansible-inventory --host django-01` 로 확인하세요.
 
 ## 최초 1회 준비
 
@@ -24,36 +44,60 @@ ansible/
 cd ansible
 
 # 1) 비밀값 파일 생성
-cp group_vars/vault.yml.example group_vars/vault.yml
-vi group_vars/vault.yml                    # DB 비밀번호, HIRA 키 입력
-ansible-vault encrypt group_vars/vault.yml # 암호화
+cp group_vars/all/vault.yml.example group_vars/all/vault.yml
+vi group_vars/all/vault.yml                    # DB 비밀번호, HIRA 키 입력
+ansible-vault encrypt group_vars/all/vault.yml # 암호화
 
-# 2) EC2 접속 키 배치
-cp <다운로드한키>.pem ~/.ssh/pharmaflow.pem
-chmod 600 ~/.ssh/pharmaflow.pem
+# 2) EC2 접속 키 배치 (팀장님께 pharmaflow-infra-key.pem 을 안전한 경로로 받으세요)
+cp <받은키>.pem ~/.ssh/pharmaflow-infra-key.pem
+chmod 600 ~/.ssh/pharmaflow-infra-key.pem
+
+# 3) 인벤토리 로컬 사본 생성 (실제 IP는 여기에만 적습니다)
+cp inventory/prod.ini inventory/prod.local.ini
+vi inventory/prod.local.ini                    # Bastion 공인 IP, 서버 사설 IP 입력
 ```
 
-## 팀장 EC2 생성 후
+> 🔒 **이 저장소는 Public 입니다. 실제 IP를 커밋하지 마세요.**
+> `inventory/prod.local.ini` 는 `.gitignore` 로 차단되어 있습니다.
+> 아래 명령은 전부 `-i inventory/prod.local.ini` 를 붙여서 실행합니다.
+> (매번 붙이기 번거로우면 `export ANSIBLE_INVENTORY=inventory/prod.local.ini`)
+
+> 🔑 **Bastion 에 .pem 을 올리지 마세요.**
+> ProxyCommand 는 `-W` 옵션으로 Bastion 을 순수 터널로만 씁니다.
+> 개인키는 이 PC 에만 있으면 되고, Bastion 이 털려도 Private 서버 키까지 같이 넘어가지 않습니다.
+> 이미 올려둔 `.pem` 이 있다면 지우세요.
+>
+> ```bash
+> ssh -i ~/.ssh/pharmaflow-infra-key.pem ubuntu@<BASTION-PUBLIC-IP> \
+>     'shred -u ~/pharmaflow-infra-key.pem'
+> ```
+
+## EC2 생성 후
 
 ```bash
 # 1) 실제 IP 확인
-cd ../environments/prod && terraform output
+cd ../environments/prod && terraform output && cd ../../ansible
 
-# 2) IP 교체 (2곳)
-#    - inventory/prod.ini  의 ansible_host
-#    - group_vars/all.yml  의 *_private_ip
+# 2) IP 교체 (2곳) — 커밋되지 않는 파일에만 적습니다
+#    - inventory/prod.local.ini  의 ansible_host, bastion_host
+#    - group_vars/all/vars.yml   의 *_private_ip
+#      (vars.yml 은 커밋되므로 사설 IP만. 공인 IP는 절대 넣지 마세요)
 
 # 3) 호스트 키 등록 (첫 접속 질문 방지)
-ssh-keyscan -H 10.0.1.10 >> ~/.ssh/known_hosts
+#    Bastion 은 직접, Private 서버는 Bastion 을 거쳐서 등록합니다.
+ssh-keyscan -H <BASTION-PUBLIC-IP> >> ~/.ssh/known_hosts
+ssh -J ubuntu@<BASTION-PUBLIC-IP> ubuntu@<DJANGO-PRIVATE-IP> exit   # 여기서 yes 한 번
 
 # 4) 접속 확인
-ansible django -m ping
+ansible -i inventory/prod.local.ini django -m ping
 
 # 5) 예행연습 - 실제로 바꾸지 않고 뭐가 바뀔지만 확인
-ansible-playbook site.yml --limit django --ask-vault-pass --check --diff
+ansible-playbook -i inventory/prod.local.ini site.yml \
+    --limit django --ask-vault-pass --check --diff
 
 # 6) 실제 적용
-ansible-playbook site.yml --limit django --ask-vault-pass
+ansible-playbook -i inventory/prod.local.ini site.yml \
+    --limit django --ask-vault-pass
 ```
 
 ## EC2 없이 지금 할 수 있는 검증
@@ -61,6 +105,7 @@ ansible-playbook site.yml --limit django --ask-vault-pass
 ```bash
 ansible-playbook site.yml --syntax-check   # 문법 검사 (접속 안 함)
 ansible-inventory --graph                  # 인벤토리 확인
+ansible-inventory --host django-01         # 변수가 실제로 로드되는지 확인
 ```
 
 ## django role 이 하는 일
@@ -68,39 +113,66 @@ ansible-inventory --graph                  # 인벤토리 확인
 | 순서 | 내용 |
 |---|---|
 | 1 | 빌드/런타임 apt 패키지 설치 |
-| 2 | 앱 디렉터리 생성 |
-| 3 | PharmaFlow 소스 clone |
+| 2 | PharmaFlow 소스 clone ← **디렉터리 생성보다 먼저** |
+| 3 | 앱 디렉터리 권한 정리 |
 | 4 | venv 생성 + requirements.txt 설치 |
 | 5 | SECRET_KEY 생성 (최초 1회만) |
 | 6 | `.env` 배포 |
 | 7 | `pharmaflow.service` systemd 유닛 배포 |
-| 8 | NFS media 마운트 (선택) |
-| 9 | migrate + collectstatic |
-| 10 | logrotate 설정 배치 |
+| 8 | EFS/NFS media 마운트 (선택) |
+| 9 | migrate + collectstatic ← **environment 로 환경변수 주입 필수** |
+| 10 | logrotate 설정 배치 (템플릿) |
 | 11 | 서비스 활성화·시작 |
 
 근거: 앱 저장소의 `deploy/manual/운영매뉴얼.md`, `deploy/SECURITY_AND_SETUP.md`
 
-## 팀원3과 맞춰야 할 것
+### 이 role 을 고칠 때 밟기 쉬운 지뢰 3개
 
-Django EC2와 Nginx EC2가 분리되어 있으므로:
+1. **2번이 3번보다 먼저여야 합니다.** `git clone` 은 대상 디렉터리가 비어 있어야 성공합니다.
+   `media/` 를 먼저 만들면 `destination path already exists and is not an empty directory` 로 죽습니다.
+2. **9번에는 `environment:` 가 필요합니다.** `.env` 는 systemd 의 `EnvironmentFile` 로만 읽힙니다.
+   Ansible `command` 는 그 파일을 모르므로, 없으면 `settings.py` 가
+   `RuntimeError: DJANGO_SECRET_KEY 환경변수가 필요합니다` 로 즉시 죽습니다.
+3. **`LOG_LEVEL` 은 대문자여야 합니다.** gunicorn 은 `.lower()` 해서 쓰지만
+   Django `LOGGING` 은 그대로 파이썬 로깅 레벨로 넘깁니다.
+   소문자 `info` 를 넣으면 `ValueError: Unable to configure root logger` 로 앱이 아예 안 뜹니다.
+
+## 구축 단계 (Nginx 연동)
+
+```
+[초기 구축 단계]                    [최종 구축 단계]
+
+Nginx                              Nginx ASG
+  ↓                                  ↓
+Django Base EC2                    Internal ALB
+Private IP:8000                      ↓
+                                   Django ASG
+
+※ 기준 서버 동작 검증을 위한        ※ Internal ALB 구축 후
+   임시 구성                          proxy_pass 를 Internal ALB DNS 로 변경
+```
+
+초기 단계에서 팀원3과 맞춰야 할 것:
 
 - 이 role 은 Gunicorn 을 `0.0.0.0:8000` 에 바인딩합니다
   (앱 저장소 `gunicorn.conf.py` 기본값 `127.0.0.1:8000` 으로는 다른 EC2에서 접근 불가)
-- 팀원3의 Nginx `proxy_pass` 는 `http://<Django EC2 사설 IP>:8000` 이 되어야 합니다
-- 팀장님 보안그룹에서 Nginx EC2 → Django EC2 8000 포트 인바운드 허용이 필요합니다
+- 팀원3의 Nginx `proxy_pass` 는 `http://<Django Base EC2 사설 IP>:8000`
+- Django SG는 8000 인바운드를 **Internal ALB SG에만** 허용합니다.
+  Internal ALB가 없는 초기 단계용으로 `environments/prod/django.tf` 에
+  Nginx SG → Django 8000 임시 규칙을 두었습니다. **Internal ALB 생성 후 삭제**하세요.
 
 ## 팀 확인이 필요한 미확정 사항
 
 | 항목 | 상태 |
 |---|---|
-| **Static → S3 + CloudFront** | **불가.** 앱의 `requirements.txt` 에 `django-storages`, `boto3` 가 없습니다. 앱 코드 변경이 선행되어야 하며 Ansible로 해결되지 않습니다. 현재 role 은 로컬 `collectstatic` 만 수행합니다 |
+| **RDS 엔드포인트 / EFS DNS** | `roles/django/defaults/main.yml` 에 `REPLACE-WITH-...` 로 두었습니다. terraform output 나오면 교체 |
 | **ALB Health Check 경로** | 앱에 전용 헬스체크 URL이 없습니다(`/health` 등). `/` 는 로그인 리다이렉트가 날 수 있어 Target Group 이 Unhealthy 로 잡힐 수 있습니다. 앱에 헬스체크 뷰 추가를 요청하거나, 성공 판정 코드에 302를 포함시켜야 합니다 |
-| **Private Subnet 접속 경로** | Django EC2에 Public IP가 없으면 Ansible이 직접 붙지 못합니다. Bastion 경유(`ProxyJump`) 또는 SSM 중 무엇을 쓸지 팀 결정이 필요합니다 |
-| **RDS 엔드포인트 / EFS DNS** | `defaults/main.yml` 에 `REPLACE-WITH-...` 로 두었습니다. terraform output 나오면 교체 |
+| **ASG 확장 시 ALLOWED_HOSTS** | 지금은 고정 사설 IP 목록입니다. ASG 인스턴스 IP는 매번 바뀌고 ALB 헬스체크는 Host 헤더에 대상 IP를 넣으므로, 그 시점에 `{{ ansible_default_ipv4.address }}` 추가 또는 `/health` 뷰 도입이 필요합니다 |
+| **Static → S3 + CloudFront** | **불가.** 앱의 `requirements.txt` 에 `django-storages`, `boto3` 가 없습니다. 앱 코드 변경이 선행되어야 하며 Ansible로 해결되지 않습니다. 현재 role 은 로컬 `collectstatic` 만 수행합니다 |
 
 ## 주의
 
-- `group_vars/vault.yml` 은 절대 커밋하지 마세요 (`.gitignore` 로 차단되어 있음)
+- `group_vars/all/vault.yml` 은 절대 커밋하지 마세요 (`.gitignore` 로 차단되어 있음)
 - `*.pem` 키 파일도 마찬가지입니다
-- `host_key_checking` 을 끄지 마세요. 대신 `ssh-keyscan` 으로 키를 등록합니다
+- `host_key_checking` 을 끄지 마세요. 대신 `ssh-keyscan` / `ssh -J` 로 키를 등록합니다
+- AMI는 **Ubuntu 24.04 (Noble)** 전제입니다. Django 6.0이 Python 3.12+ 를 요구합니다
