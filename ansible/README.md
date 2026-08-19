@@ -93,12 +93,62 @@ ansible -i inventory/prod.local.ini django -m ping
 
 # 5) 예행연습 - 실제로 바꾸지 않고 뭐가 바뀔지만 확인
 ansible-playbook -i inventory/prod.local.ini site.yml \
-    --limit django --ask-vault-pass --check --diff
+    --limit django --ask-vault-pass --check --diff --skip-tags db
 
-# 6) 실제 적용
+# 6) 실제 적용  ← 아래 "실행 시나리오" 를 먼저 읽으세요
+ansible-playbook -i inventory/prod.local.ini site.yml \
+    --limit django --ask-vault-pass --skip-tags db
+```
+
+## 실행 시나리오 (RDS 전 / 후)
+
+`django_db_host` 는 `roles/django/defaults/main.yml` 에서 아직
+`REPLACE-WITH-RDS-ENDPOINT` 입니다. **RDS 생성 전에 전체 실행하면 반드시 실패합니다.**
+그래서 role 을 태그로 끊어두었습니다.
+
+| 태그 | 내용 |
+|---|---|
+| `packages` | OS 패키지 설치 |
+| `app` | 소스 clone + venv/의존성 |
+| `config` | 디렉터리·SECRET_KEY·`.env`·systemd 유닛·logrotate |
+| `storage` | media 공유 스토리지 마운트 (EFS/NFS) |
+| `db` | migrate / collectstatic ← **RDS 엔드포인트 필요** |
+| `service` | 서비스 활성화·기동 |
+
+### ① RDS 생성 전 — 기본 구성까지
+
+```bash
+ansible-playbook -i inventory/prod.local.ini site.yml \
+    --limit django --ask-vault-pass --skip-tags db
+```
+
+여기까지 통과하면 정상입니다. 이 상태에서는:
+
+- `systemctl status pharmaflow` 가 **active** 여야 합니다
+  (Django 는 기동 시점에 DB 에 연결하지 않으므로 RDS 없이도 뜹니다)
+- DB 를 건드리는 페이지는 **500** 이 납니다. 이 단계에서는 정상입니다
+- `.env` 의 `DB_HOST` 는 아직 플레이스홀더입니다
+
+### ② RDS 생성 후 — 마이그레이션까지
+
+`roles/django/defaults/main.yml` 의 `django_db_host` 를 실제 엔드포인트로 교체한 뒤:
+
+```bash
+# 마이그레이션만 추가로
+ansible-playbook -i inventory/prod.local.ini site.yml \
+    --limit django --ask-vault-pass --tags db
+
+# 또는 전체
 ansible-playbook -i inventory/prod.local.ini site.yml \
     --limit django --ask-vault-pass
 ```
+
+교체를 잊고 `db` 를 돌리면 `assert` 가 먼저 잡아서, DB 연결 타임아웃 대신
+"아직 플레이스홀더입니다" 라는 메시지로 즉시 멈춥니다.
+
+> ⚠️ **이 role 은 아직 실서버에서 실행된 이력이 없습니다.**
+> 지금까지 검증한 것은 `--syntax-check`, `--list-tasks`(태그 조합), 템플릿 렌더링뿐입니다.
+> 최초 실행에서 실패하면 아래 "지뢰 3개" 를 먼저 확인하세요.
 
 ## EC2 없이 지금 할 수 있는 검증
 
@@ -165,7 +215,7 @@ Private IP:8000                      ↓
 
 | 항목 | 상태 |
 |---|---|
-| **RDS 엔드포인트 / EFS DNS** | `roles/django/defaults/main.yml` 에 `REPLACE-WITH-...` 로 두었습니다. terraform output 나오면 교체 |
+| **RDS 엔드포인트 / EFS DNS** | `roles/django/defaults/main.yml` 에 `REPLACE-WITH-...` 로 두었습니다. terraform output 나오면 교체. 그때까지는 `--skip-tags db` (위 "실행 시나리오" 참고) |
 | **ALB Health Check 경로** | 앱에 전용 헬스체크 URL이 없습니다(`/health` 등). `/` 는 로그인 리다이렉트가 날 수 있어 Target Group 이 Unhealthy 로 잡힐 수 있습니다. 앱에 헬스체크 뷰 추가를 요청하거나, 성공 판정 코드에 302를 포함시켜야 합니다 |
 | **ASG 확장 시 ALLOWED_HOSTS** | 지금은 고정 사설 IP 목록입니다. ASG 인스턴스 IP는 매번 바뀌고 ALB 헬스체크는 Host 헤더에 대상 IP를 넣으므로, 그 시점에 `{{ ansible_default_ipv4.address }}` 추가 또는 `/health` 뷰 도입이 필요합니다 |
 | **Static → S3 + CloudFront** | **불가.** 앱의 `requirements.txt` 에 `django-storages`, `boto3` 가 없습니다. 앱 코드 변경이 선행되어야 하며 Ansible로 해결되지 않습니다. 현재 role 은 로컬 `collectstatic` 만 수행합니다 |
