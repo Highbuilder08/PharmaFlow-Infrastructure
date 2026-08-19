@@ -49,6 +49,9 @@ ansible/
 > | `group_vars/all/vault.yml` | `.env` 배포 단계에서 `django_db_password is undefined` |
 > | `inventory/prod.local.ini` | 대상 호스트가 없어 ping 부터 실패 |
 > | `~/.ssh/pharmaflow-infra-key.pem` | SSH 인증 실패 |
+>
+> `prod.local.ini` 에는 IP 뿐 아니라 **RDS 엔드포인트·EFS DNS 도 들어갑니다.**
+> 이 값들은 커밋되지 않으므로 pull 로 오지 않습니다. 아래 "실행 시나리오 ②" 참고.
 
 ```bash
 cd ansible
@@ -141,18 +144,26 @@ ansible-playbook -i inventory/prod.local.ini site.yml \
 
 ### ② RDS 생성 후 — 마이그레이션까지
 
-`django_db_host` 는 `roles/django/defaults/main.yml` 에 있고 **이 파일은 커밋 대상입니다.**
-실행 서버(Server1)에서 직접 고치지 마세요. 로컬 수정이 남아 다음 `git pull` 에서 충돌합니다.
+RDS 엔드포인트와 EFS DNS 는 **커밋하지 않습니다.**
+`inventory/prod.local.ini` 의 `[all:vars]` 에 넣어 role defaults 를 덮어씁니다.
 
-엔드포인트는 아래 경로로 반영합니다.
+```ini
+[all:vars]
+django_db_host=<RDS 엔드포인트>
+django_efs_dns=<EFS DNS 이름>
+```
 
-```
-팀장: RDS 생성 → terraform output 으로 엔드포인트 확인
-  ↓  값 전달
-Django 담당: defaults/main.yml 수정 → syntax-check → Push/PR
-  ↓
-팀장: PR Merge → Server1 에서 git pull → 아래 명령 실행
-```
+> 🔒 **왜 커밋하지 않나**
+> 이 값들은 전 세계에서 resolve 되는 AWS 리소스 식별자입니다. 저장소가 Public 이고
+> VPC CIDR·서브넷·SG 규칙이 이미 공개돼 있어서, 여기에 실제 주소까지 더하면
+> 내부 구성이 그대로 드러납니다. 한번 커밋하면 나중에 지워도 히스토리에 남습니다.
+>
+> `defaults/main.yml` 은 `REPLACE-WITH-...` 플레이스홀더로 유지하세요.
+> 반영이 됐는지는 이렇게 확인합니다:
+>
+> ```bash
+> ansible-inventory -i inventory/prod.local.ini --host django-01 | grep db_host
+> ```
 
 ```bash
 # 마이그레이션만 추가로

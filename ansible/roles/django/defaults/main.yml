@@ -40,8 +40,13 @@ django_debug: "False"
 
 # ── DB (RDS MariaDB) ──────────────────────────────────────────────
 # 최종 구조에서는 EC2 자체 MariaDB가 아니라 RDS를 사용합니다.
-# 팀장님이 RDS를 만들면 terraform output 의 엔드포인트로 여기를 교체하세요.
-#   예) pharmaflow.cxxxxxx.ap-northeast-2.rds.amazonaws.com
+#
+# ⚠️ 실제 엔드포인트를 여기 적지 마세요. 이 저장소는 Public 입니다.
+#    RDS 엔드포인트는 전 세계에서 resolve 되는 AWS 리소스 식별자라,
+#    이미 공개된 VPC CIDR·SG 와 합쳐지면 내부 구성이 그대로 드러납니다.
+#    실제 값은 커밋되지 않는 inventory/prod.local.ini 의 [all:vars] 에 둡니다.
+#      django_db_host=<RDS 엔드포인트>
+#    (우선순위: role defaults < 인벤토리 [all:vars] 라서 아래 값이 덮어써집니다)
 django_db_name: pharmaflow
 django_db_user: pharmaflow_user
 django_db_host: "REPLACE-WITH-RDS-ENDPOINT"
@@ -57,15 +62,17 @@ django_db_port: 3306
 #
 #   efs   : AWS EFS 마운트 (최종 구조)
 #   nfs   : 직접 띄운 NFS 서버 마운트
-#   local : 마운트 안 함 (기준 서버 1대 검증용 = 지금 단계)
+#   local : 마운트 안 함 (기준 서버 1대 검증용)
 #
 # settings.py 의 MEDIA_ROOT 가 BASE_DIR/media 이므로,
 # 그 경로에 마운트하면 앱 코드 수정 없이 그대로 동작합니다.
-django_media_storage: local
+django_media_storage: efs
 
 # EFS 사용 시 (django_media_storage: efs)
-# 팀장님 terraform output 의 EFS DNS 이름으로 교체하세요.
-#   예) fs-0abc123.efs.ap-northeast-2.amazonaws.com
+#
+# ⚠️ django_db_host 와 같은 이유로 실제 DNS 이름을 여기 적지 마세요.
+#    inventory/prod.local.ini 의 [all:vars] 에 둡니다.
+#      django_efs_dns=<EFS DNS 이름>
 django_efs_dns: "REPLACE-WITH-EFS-DNS"
 
 # 직접 띄운 NFS 서버 사용 시 (django_media_storage: nfs)
