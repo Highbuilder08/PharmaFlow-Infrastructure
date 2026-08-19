@@ -13,8 +13,8 @@
 # VPC 10.23.0.0/16 / Private A 10.23.11.0/24 / Private C 10.23.12.0/24
 # 팀장님 terraform output 이 나오면 실제 값으로 교체하세요.
 #   cd environments/prod && terraform output django_base_private_ip
-django_private_ip: 10.23.11.10      # ← terraform output 후 교체
-nginx_private_ip: 10.23.11.20       # ← 팀원3 EC2, terraform output 후 교체
+django_private_ip: 10.23.11.210     # Django Base EC2 (Private A)
+nginx_private_ip: 10.23.11.232      # 팀원3 Nginx EC2 (Private A)
 
 # ── Django ALLOWED_HOSTS ──────────────────────────────────
 # 초기 구축 단계: Nginx 가 Django 사설 IP 로 직접 proxy_pass 하므로 두 IP 로 충분합니다.

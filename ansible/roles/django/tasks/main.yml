@@ -2,6 +2,21 @@
 # PharmaFlow Django 애플리케이션 서버 구성
 # 근거: 앱 저장소의 deploy/manual/운영매뉴얼.md 8장(배포 및 유지보수)
 #       앱 저장소의 deploy/SECURITY_AND_SETUP.md 1장(환경변수)
+#
+# ── 태그 ──────────────────────────────────────────────────────────
+#   packages  OS 패키지 설치
+#   app       소스 clone + venv/의존성
+#   config    디렉터리·SECRET_KEY·.env·systemd 유닛·logrotate
+#   storage   media 공유 스토리지 마운트 (EFS/NFS)
+#   db        migrate / collectstatic   ← RDS 엔드포인트가 있어야 동작
+#   service   서비스 활성화·기동
+#
+# RDS 생성 전에는 db 를 빼고 돌립니다:
+#   ansible-playbook -i inventory/prod.local.ini site.yml \
+#       --limit django --ask-vault-pass --skip-tags db
+#
+# ⚠️ --tags db 만 단독 실행해도 되도록 SECRET_KEY 로드 태스크에 db 태그를
+#    같이 달아두었습니다. 빼면 migrate 가 django_secret_key is undefined 로 죽습니다.
 
 # ── 1. OS 패키지 ──────────────────────────────────────────────────
 - name: apt 캐시 갱신
@@ -9,12 +24,14 @@
   apt:
     update_cache: true
     cache_valid_time: 3600      # 1시간 이내 갱신했으면 건너뜀
+  tags: [packages]
 
 - name: 빌드/런타임 패키지 설치
   become: true
   apt:
     name: "{{ django_apt_packages }}"
     state: present
+  tags: [packages]
 
 # ── 2. 소스 코드 ──────────────────────────────────────────────────
 # ⚠️ 반드시 디렉터리 생성보다 먼저 와야 합니다.
@@ -30,6 +47,7 @@
     version: "{{ django_repo_branch }}"
     force: true
   notify: gunicorn 재시작
+  tags: [app]
 
 # ── 3. 디렉터리 ───────────────────────────────────────────────────
 # 저장소에 이미 있는 경로지만, 소유권/권한을 확정해 둡니다.
@@ -45,6 +63,7 @@
     - "{{ django_app_dir }}"
     - "{{ django_app_dir }}/media"
     - "{{ django_app_dir }}/logs"
+  tags: [config]
 
 # ── 4. 파이썬 가상환경 ────────────────────────────────────────────
 # mysqlclient 컴파일 때문에 1번 단계의 패키지가 반드시 먼저 깔려 있어야 합니다.
@@ -56,6 +75,7 @@
     virtualenv: "{{ django_venv_dir }}"
     virtualenv_command: "python3 -m venv"
   notify: gunicorn 재시작
+  tags: [app]
 
 # ── 5. SECRET_KEY (최초 1회만 생성) ───────────────────────────────
 # 매번 새로 만들면 기존 세션과 서명값이 전부 무효화되므로 creates: 로 고정합니다.
@@ -68,6 +88,7 @@
   args:
     creates: "{{ django_app_dir }}/.secret_key"
     executable: /bin/bash
+  tags: [config]
 
 - name: SECRET_KEY 파일 권한 조이기
   become: true
@@ -76,17 +97,26 @@
     owner: "{{ django_user }}"
     group: "{{ django_user }}"
     mode: "0600"
+  tags: [config]
 
+# 아래 두 태스크는 서버를 바꾸지 않고 변수만 채웁니다.
+# .env(config) 와 migrate(db) 양쪽이 이 값을 쓰기 때문에 always 로 둡니다.
+# [config, db] 로 달면 --skip-tags db 가 config 까지 같이 지워서
+# .env 배포가 "django_secret_key is undefined" 로 죽습니다.
 - name: SECRET_KEY 읽어오기
   become: true
   slurp:
     src: "{{ django_app_dir }}/.secret_key"
   register: _secret_key_raw
+  failed_when: false            # 아직 파일이 없는 단계(예: --tags packages)에서도 넘어가도록
+  tags: [always]
 
 - name: SECRET_KEY 변수에 담기
   set_fact:
     django_secret_key: "{{ _secret_key_raw.content | b64decode }}"
   no_log: true                  # 로그에 비밀키가 찍히지 않도록
+  when: _secret_key_raw.content is defined
+  tags: [always]
 
 # ── 6. 환경변수 파일 ──────────────────────────────────────────────
 - name: .env 배포
@@ -99,6 +129,7 @@
     mode: "0640"                # 소유자만 읽기. DB 비밀번호가 들어감
   no_log: true
   notify: gunicorn 재시작
+  tags: [config]
 
 # ── 7. systemd 서비스 ─────────────────────────────────────────────
 - name: pharmaflow.service 배포
@@ -112,6 +143,7 @@
   notify:
     - systemd 데몬 리로드
     - gunicorn 재시작
+  tags: [config]
 
 # ── 8. media 공유 스토리지 마운트 ─────────────────────────────────
 # EFS는 NFSv4.1 프로토콜을 씁니다. 권장 마운트 옵션은 AWS 문서 기준입니다.
@@ -124,6 +156,7 @@
     opts: nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport,_netdev
     state: mounted
   when: django_media_storage == 'efs'
+  tags: [storage]
 
 - name: media 디렉터리에 NFS 마운트
   become: true
@@ -134,6 +167,7 @@
     opts: defaults,_netdev
     state: mounted
   when: django_media_storage == 'nfs'
+  tags: [storage]
 
 # 마운트하면 그 폴더의 소유자는 원격 스토리지 쪽 값으로 바뀝니다.
 # Django(=ubuntu)가 업로드 파일을 쓸 수 있어야 하므로 다시 맞춰줍니다.
@@ -145,6 +179,7 @@
     owner: "{{ django_user }}"
     group: "{{ django_user }}"
   when: django_media_storage in ['efs', 'nfs']
+  tags: [storage]
 
 # ── 9. Django 관리 명령 ───────────────────────────────────────────
 # 운영매뉴얼 8장의 migrate / collectstatic 절차
@@ -154,6 +189,9 @@
 #    Ansible 의 command 태스크는 그 파일을 모르기 때문에, 환경변수를 여기서
 #    따로 넣어주지 않으면 settings.py 가 아래로 즉시 죽습니다.
 #      RuntimeError: DJANGO_SECRET_KEY 환경변수가 필요합니다.
+#
+# ⚠️ django_db_host 가 RDS 엔드포인트로 교체되기 전에는 이 블록이 실패합니다.
+#    그때까지는 --skip-tags db 로 건너뛰세요.
 - name: Django 관리 명령 실행
   become: true
   become_user: "{{ django_user }}"
@@ -167,7 +205,18 @@
     DB_HOST: "{{ django_db_host }}"
     DB_PORT: "{{ django_db_port }}"
     LOG_LEVEL: "{{ django_log_level }}"
+  tags: [db]
   block:
+    - name: DB 엔드포인트가 아직 플레이스홀더인지 확인
+      assert:
+        that: "'REPLACE-WITH' not in django_db_host"
+        fail_msg: >-
+          django_db_host 가 아직 플레이스홀더({{ django_db_host }})입니다.
+          RDS 생성 전이라면 --skip-tags db 로 이 단계를 건너뛰고,
+          RDS가 준비됐다면 roles/django/defaults/main.yml 의
+          django_db_host 를 실제 엔드포인트로 교체하세요.
+        quiet: true
+
     - name: DB 마이그레이션
       command: "{{ django_venv_dir }}/bin/python manage.py migrate --noinput"
       args:
@@ -194,13 +243,17 @@
     owner: root
     group: root
     mode: "0644"
+  tags: [config]
 
 - name: logrotate 설정 문법 검사
   become: true
   command: logrotate -d /etc/logrotate.d/pharmaflow
   changed_when: false
+  tags: [config]
 
 # ── 11. 서비스 기동 ───────────────────────────────────────────────
+# RDS 전에도 기동 자체는 됩니다(Django는 시작 시 DB에 연결하지 않습니다).
+# 다만 DB를 건드리는 요청은 500이 납니다. 정상입니다.
 - name: pharmaflow 서비스 활성화 및 시작
   become: true
   systemd:
@@ -208,3 +261,4 @@
     state: started
     enabled: true               # 재부팅 후 자동 시작
     daemon_reload: true
+  tags: [service]
