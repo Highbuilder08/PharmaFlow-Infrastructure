@@ -1,1 +1,2 @@
-admin_cidr = "<실제 관리자 공인 IP>/32"S
+admin_cidr   = "YOUR_PUBLIC_IP/32"
+ec2_key_name = "YOUR_EC2_KEY_PAIR_NAME"
