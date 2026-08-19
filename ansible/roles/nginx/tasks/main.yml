@@ -1,0 +1,55 @@
+---
+# PharmaFlow Nginx 웹 서버 구성
+
+# ── 1. Nginx 설치 ─────────────────────────────────────────────────
+- name: apt 캐시 갱신
+  become: true
+  apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Nginx 설치
+  become: true
+  apt:
+    name: nginx
+    state: present
+
+# ── 2. 사이트 설정 배포 ──────────────────────────────────────────
+- name: PharmaFlow Nginx 설정 배포
+  become: true
+  template:
+    src: pharmaflow.conf.j2
+    dest: "/etc/nginx/sites-available/{{ nginx_site_name }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: nginx 재시작
+
+- name: PharmaFlow 사이트 활성화
+  become: true
+  file:
+    src: "/etc/nginx/sites-available/{{ nginx_site_name }}"
+    dest: "/etc/nginx/sites-enabled/{{ nginx_site_name }}"
+    state: link
+  notify: nginx 재시작
+
+- name: 기본 Nginx 사이트 비활성화
+  become: true
+  file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: nginx 재시작
+
+# ── 3. Nginx 설정 검증 ────────────────────────────────────────────
+- name: Nginx 설정 문법 검사
+  become: true
+  command: nginx -t
+  changed_when: false
+
+# ── 4. 서비스 기동 ────────────────────────────────────────────────
+- name: Nginx 서비스 활성화 및 시작
+  become: true
+  systemd:
+    name: "{{ nginx_service_name }}"
+    state: started
+    enabled: true

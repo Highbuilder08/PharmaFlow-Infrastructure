@@ -1,0 +1,25 @@
+---
+# nginx role 기본 변수
+# 여기 값은 group_vars/ 나 playbook 에서 덮어쓸 수 있습니다.
+
+# ── 서비스 ────────────────────────────────────────────────────────
+nginx_service_name: nginx
+
+# ── Backend ───────────────────────────────────────────────────────
+# 초기 구축 단계에서는 Nginx가 Django EC2의 사설 IP로 직접 proxy_pass 합니다.
+# 최종 구축 단계에서는 Internal ALB DNS로 교체할 예정입니다.
+nginx_backend_host: "{{ django_private_ip }}"
+nginx_backend_port: 8000
+
+# ── Nginx 사이트 설정 ─────────────────────────────────────────────
+nginx_site_name: pharmaflow
+nginx_listen_port: 80
+nginx_server_name: "_"
+
+# 업로드 파일 크기 제한
+nginx_client_max_body_size: "20M"
+
+# Reverse Proxy timeout
+nginx_proxy_connect_timeout: "60s"
+nginx_proxy_read_timeout: "60s"
+nginx_proxy_send_timeout: "60s"
