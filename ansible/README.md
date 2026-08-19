@@ -40,6 +40,16 @@ ansible/
 
 ## 최초 1회 준비
 
+> ⚠️ **`git pull` 만으로는 실행되지 않습니다.**
+> 아래 3개는 전부 `.gitignore` 로 차단되어 있어 저장소에 없습니다.
+> 플레이북을 실행하는 서버(Server1)에서 **최초 1회 직접 만들어야** 합니다.
+>
+> | 파일 | 없으면 |
+> |---|---|
+> | `group_vars/all/vault.yml` | `.env` 배포 단계에서 `django_db_password is undefined` |
+> | `inventory/prod.local.ini` | 대상 호스트가 없어 ping 부터 실패 |
+> | `~/.ssh/pharmaflow-infra-key.pem` | SSH 인증 실패 |
+
 ```bash
 cd ansible
 
@@ -131,7 +141,18 @@ ansible-playbook -i inventory/prod.local.ini site.yml \
 
 ### ② RDS 생성 후 — 마이그레이션까지
 
-`roles/django/defaults/main.yml` 의 `django_db_host` 를 실제 엔드포인트로 교체한 뒤:
+`django_db_host` 는 `roles/django/defaults/main.yml` 에 있고 **이 파일은 커밋 대상입니다.**
+실행 서버(Server1)에서 직접 고치지 마세요. 로컬 수정이 남아 다음 `git pull` 에서 충돌합니다.
+
+엔드포인트는 아래 경로로 반영합니다.
+
+```
+팀장: RDS 생성 → terraform output 으로 엔드포인트 확인
+  ↓  값 전달
+Django 담당: defaults/main.yml 수정 → syntax-check → Push/PR
+  ↓
+팀장: PR Merge → Server1 에서 git pull → 아래 명령 실행
+```
 
 ```bash
 # 마이그레이션만 추가로
@@ -143,8 +164,18 @@ ansible-playbook -i inventory/prod.local.ini site.yml \
     --limit django --ask-vault-pass
 ```
 
-교체를 잊고 `db` 를 돌리면 `assert` 가 먼저 잡아서, DB 연결 타임아웃 대신
+교체 전에 `db` 를 돌리면 `assert` 가 먼저 잡아서, DB 연결 타임아웃 대신
 "아직 플레이스홀더입니다" 라는 메시지로 즉시 멈춥니다.
+
+> 급하게 한 번만 확인하고 싶다면 커밋 없이 `-e` 로 넘길 수도 있습니다.
+> 다만 이렇게 하면 엔드포인트가 저장소에 남지 않으므로, 검증용으로만 쓰고
+> 확정 값은 반드시 위 경로로 커밋하세요.
+>
+> ```bash
+> ansible-playbook -i inventory/prod.local.ini site.yml \
+>     --limit django --ask-vault-pass --tags db \
+>     -e django_db_host=<RDS-엔드포인트>
+> ```
 
 > ⚠️ **이 role 은 아직 실서버에서 실행된 이력이 없습니다.**
 > 지금까지 검증한 것은 `--syntax-check`, `--list-tasks`(태그 조합), 템플릿 렌더링뿐입니다.
