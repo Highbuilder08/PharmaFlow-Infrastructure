@@ -28,6 +28,11 @@ override.tf.json
 *.pem
 *.key
 
+# Ansible
+ansible/group_vars/vault.yml
+ansible/**/*.retry
+ansible/inventory/*.local.ini
+
 # OS / Editor
 .DS_Store
 .vscode/

@@ -1,0 +1,16 @@
+---
+# 모든 서버에 공통 적용되는 변수 (비밀값 아님 - 커밋해도 됨)
+#
+# ⚠️ 비밀번호·API 키는 여기 쓰지 마세요. vault.yml 에 넣습니다.
+#    vault.yml 은 .gitignore 로 커밋이 차단되어 있습니다.
+
+# 팀장님 terraform output 이 나오면 이 IP들을 교체하세요
+django_private_ip: 10.0.1.10
+nginx_private_ip: 10.0.1.20
+mariadb_private_ip: 10.0.2.10
+
+django_allowed_hosts:
+  - "{{ django_private_ip }}"
+  - "{{ nginx_private_ip }}"
+
+django_db_host: "{{ mariadb_private_ip }}"

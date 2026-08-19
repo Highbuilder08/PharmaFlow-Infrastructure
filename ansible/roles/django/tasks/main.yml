@@ -1,0 +1,161 @@
+---
+# PharmaFlow Django 애플리케이션 서버 구성
+# 근거: 앱 저장소의 deploy/manual/운영매뉴얼.md 8장(배포 및 유지보수)
+#       앱 저장소의 deploy/SECURITY_AND_SETUP.md 1장(환경변수)
+
+# ── 1. OS 패키지 ──────────────────────────────────────────────────
+- name: apt 캐시 갱신
+  become: true
+  apt:
+    update_cache: true
+    cache_valid_time: 3600      # 1시간 이내 갱신했으면 건너뜀
+
+- name: 빌드/런타임 패키지 설치
+  become: true
+  apt:
+    name: "{{ django_apt_packages }}"
+    state: present
+
+# ── 2. 디렉터리 ───────────────────────────────────────────────────
+- name: 앱 디렉터리 생성
+  become: true
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ django_user }}"
+    group: "{{ django_user }}"
+    mode: "0755"
+  loop:
+    - "{{ django_app_dir }}"
+    - "{{ django_app_dir }}/media"
+    - "{{ django_app_dir }}/logs"
+
+# ── 3. 소스 코드 ──────────────────────────────────────────────────
+- name: PharmaFlow 소스 받기
+  become: true
+  become_user: "{{ django_user }}"
+  git:
+    repo: "{{ django_repo_url }}"
+    dest: "{{ django_app_dir }}"
+    version: "{{ django_repo_branch }}"
+    force: true
+  notify: gunicorn 재시작
+
+# ── 4. 파이썬 가상환경 ────────────────────────────────────────────
+# mysqlclient 컴파일 때문에 1번 단계의 패키지가 반드시 먼저 깔려 있어야 합니다.
+- name: 가상환경 생성 및 의존성 설치
+  become: true
+  become_user: "{{ django_user }}"
+  pip:
+    requirements: "{{ django_app_dir }}/requirements.txt"
+    virtualenv: "{{ django_venv_dir }}"
+    virtualenv_command: "python3 -m venv"
+  notify: gunicorn 재시작
+
+# ── 5. SECRET_KEY (최초 1회만 생성) ───────────────────────────────
+# 매번 새로 만들면 기존 세션과 서명값이 전부 무효화되므로 creates: 로 고정합니다.
+- name: SECRET_KEY 파일 생성 (최초 1회)
+  become: true
+  become_user: "{{ django_user }}"
+  shell: |
+    set -o pipefail
+    openssl rand -base64 48 | tr -d '\n' > {{ django_app_dir }}/.secret_key
+  args:
+    creates: "{{ django_app_dir }}/.secret_key"
+    executable: /bin/bash
+
+- name: SECRET_KEY 파일 권한 조이기
+  become: true
+  file:
+    path: "{{ django_app_dir }}/.secret_key"
+    owner: "{{ django_user }}"
+    group: "{{ django_user }}"
+    mode: "0600"
+
+- name: SECRET_KEY 읽어오기
+  become: true
+  slurp:
+    src: "{{ django_app_dir }}/.secret_key"
+  register: _secret_key_raw
+
+- name: SECRET_KEY 변수에 담기
+  set_fact:
+    django_secret_key: "{{ _secret_key_raw.content | b64decode }}"
+  no_log: true                  # 로그에 비밀키가 찍히지 않도록
+
+# ── 6. 환경변수 파일 ──────────────────────────────────────────────
+- name: .env 배포
+  become: true
+  template:
+    src: env.j2
+    dest: "{{ django_app_dir }}/.env"
+    owner: "{{ django_user }}"
+    group: "{{ django_user }}"
+    mode: "0640"                # 소유자만 읽기. DB 비밀번호가 들어감
+  no_log: true
+  notify: gunicorn 재시작
+
+# ── 7. systemd 서비스 ─────────────────────────────────────────────
+- name: pharmaflow.service 배포
+  become: true
+  template:
+    src: pharmaflow.service.j2
+    dest: "/etc/systemd/system/{{ django_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - systemd 데몬 리로드
+    - gunicorn 재시작
+
+# ── 8. NFS media 마운트 (선택) ────────────────────────────────────
+- name: media 디렉터리 NFS 마운트
+  become: true
+  mount:
+    path: "{{ django_app_dir }}/media"
+    src: "{{ django_nfs_server }}:{{ django_nfs_export }}"
+    fstype: nfs
+    opts: defaults,_netdev
+    state: mounted
+  when: django_nfs_enabled | bool
+
+# ── 9. Django 관리 명령 ───────────────────────────────────────────
+# 운영매뉴얼 8장의 migrate / collectstatic 절차
+- name: DB 마이그레이션
+  become: true
+  become_user: "{{ django_user }}"
+  command: "{{ django_venv_dir }}/bin/python manage.py migrate --noinput"
+  args:
+    chdir: "{{ django_app_dir }}"
+  register: _migrate
+  changed_when: "'No migrations to apply' not in _migrate.stdout"
+
+- name: 정적 파일 수집
+  become: true
+  become_user: "{{ django_user }}"
+  command: "{{ django_venv_dir }}/bin/python manage.py collectstatic --noinput"
+  args:
+    chdir: "{{ django_app_dir }}"
+  register: _collectstatic
+  changed_when: "'0 static files copied' not in _collectstatic.stdout"
+
+# ── 10. 로그 회전 ─────────────────────────────────────────────────
+# 앱 저장소가 제공하는 설정을 그대로 배치 (deploy/logrotate/pharmaflow)
+- name: logrotate 설정 배치
+  become: true
+  copy:
+    src: "{{ django_app_dir }}/deploy/logrotate/pharmaflow"
+    dest: /etc/logrotate.d/pharmaflow
+    remote_src: true            # 파일이 원격 서버에 이미 있음(git clone 으로 받음)
+    owner: root
+    group: root
+    mode: "0644"
+
+# ── 11. 서비스 기동 ───────────────────────────────────────────────
+- name: pharmaflow 서비스 활성화 및 시작
+  become: true
+  systemd:
+    name: "{{ django_service_name }}"
+    state: started
+    enabled: true               # 재부팅 후 자동 시작
+    daemon_reload: true
