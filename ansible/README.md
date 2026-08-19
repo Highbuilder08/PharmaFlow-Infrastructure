@@ -95,7 +95,8 @@ Django EC2와 Nginx EC2가 분리되어 있으므로:
 | 항목 | 상태 |
 |---|---|
 | **Static → S3 + CloudFront** | **불가.** 앱의 `requirements.txt` 에 `django-storages`, `boto3` 가 없습니다. 앱 코드 변경이 선행되어야 하며 Ansible로 해결되지 않습니다. 현재 role 은 로컬 `collectstatic` 만 수행합니다 |
-| **ALB Health Check 경로** | 앱에 전용 헬스체크 URL이 없습니다(`/health` 등). `/` 는 로그인 리다이렉트가 날 수 있어 Target Group 이 Unhealthy 로 잡힐 수 있습니다. 앱에 헬스체크 뷰 추가를 요청하거나, 성공 판정 코드에 302를 포함시켜야 합니다 |
+| **ALB Health Check 경로** | **해결됨.** 앱에 `/health/` 추가 (앱 저장소 `feature/health-check` 브랜치). Target Group 경로를 `/health/` 로 지정하세요. DB를 조회하지 않으므로 RDS 장애가 전체 인스턴스 교체로 번지지 않습니다. 루트 `/` 는 DB를 조회하므로 헬스체크에 쓰면 안 됩니다 |
+| **ASG의 ALLOWED_HOSTS** | AMI를 구울 때 `.env` 에 박힌 IP는 그 인스턴스의 것입니다. ASG가 새로 띄운 인스턴스는 IP가 달라 헬스체크가 400을 받습니다. 부팅 시점에 메타데이터로 자기 IP를 다시 넣는 처리가 필요합니다(user_data 또는 systemd `ExecStartPre`). AMI 단계 전에 해결해야 합니다 |
 | **Private Subnet 접속 경로** | Django EC2에 Public IP가 없으면 Ansible이 직접 붙지 못합니다. Bastion 경유(`ProxyJump`) 또는 SSM 중 무엇을 쓸지 팀 결정이 필요합니다 |
 | **RDS 엔드포인트 / EFS DNS** | `defaults/main.yml` 에 `REPLACE-WITH-...` 로 두었습니다. terraform output 나오면 교체 |
 
