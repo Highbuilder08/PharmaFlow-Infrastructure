@@ -5,8 +5,7 @@
 
 # ── Django ALLOWED_HOSTS ──────────────────────────────────────────
 django_allowed_hosts:
-  - "{{ django_private_ip }}"
-  - "{{ nginx_private_ip }}"
+  - "*"
 
 # ── 환경 의존 변수 ────────────────────────────────────────────────
 # 아래 변수는 group_vars/all/local.yml 에서 정의합니다.
