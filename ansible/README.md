@@ -16,8 +16,9 @@ Bastion (Public A)
 Django (Private A) / Nginx (Private A)
 ```
 
-`inventory/prod.ini` 의 `ansible_ssh_common_args` 가 이 경유를 처리합니다.
-Bastion 공인 IP만 채워 넣으면 `ansible django -m ping` 이 그대로 동작합니다.
+Bastion 경유(ProxyCommand)는 인벤토리가 아니라 **`~/.ssh/config` 에서 관리합니다.**
+`inventory/prod.ini` 하단의 주석 샘플을 실행 서버의 `~/.ssh/config` 에 채워 넣으세요.
+인벤토리에는 대상 서버 사설 IP만 남습니다.
 
 ## 구조
 
@@ -67,7 +68,11 @@ chmod 600 ~/.ssh/pharmaflow-infra-key.pem
 
 # 3) 인벤토리 로컬 사본 생성 (실제 IP는 여기에만 적습니다)
 cp inventory/prod.ini inventory/prod.local.ini
-vi inventory/prod.local.ini                    # Bastion 공인 IP, 서버 사설 IP 입력
+vi inventory/prod.local.ini                    # 서버 사설 IP + RDS/EFS 엔드포인트 입력
+
+# 4) Bastion 경유 설정 (~/.ssh/config)
+#    prod.ini 하단의 주석 샘플대로 채웁니다. Bastion 공인 IP는 여기에만 들어갑니다.
+vi ~/.ssh/config
 ```
 
 > 🔒 **이 저장소는 Public 입니다. 실제 IP를 커밋하지 마세요.**
@@ -91,8 +96,9 @@ vi inventory/prod.local.ini                    # Bastion 공인 IP, 서버 사�
 # 1) 실제 IP 확인
 cd ../environments/prod && terraform output && cd ../../ansible
 
-# 2) IP 교체 (2곳) — 커밋되지 않는 파일에만 적습니다
-#    - inventory/prod.local.ini  의 ansible_host, bastion_host
+# 2) IP 교체 (3곳) — 공인 IP는 커밋되지 않는 곳에만 적습니다
+#    - inventory/prod.local.ini  의 ansible_host (사설 IP)
+#    - ~/.ssh/config             의 Bastion HostName (공인 IP)
 #    - group_vars/all/vars.yml   의 *_private_ip
 #      (vars.yml 은 커밋되므로 사설 IP만. 공인 IP는 절대 넣지 마세요)
 
@@ -115,8 +121,9 @@ ansible-playbook -i inventory/prod.local.ini site.yml \
 
 ## 실행 시나리오 (RDS 전 / 후)
 
-`django_db_host` 는 `roles/django/defaults/main.yml` 에서 아직
-`REPLACE-WITH-RDS-ENDPOINT` 입니다. **RDS 생성 전에 전체 실행하면 반드시 실패합니다.**
+`roles/django/defaults/main.yml` 의 `django_db_host` / `django_efs_dns` 는
+일부러 `REPLACE-WITH-...` 플레이스홀더로 커밋되어 있습니다 (아래 🔒 참고).
+실제 값을 `prod.local.ini` 에 넣기 **전에** 전체 실행하면 반드시 실패합니다.
 그래서 role 을 태그로 끊어두었습니다.
 
 | 태그 | 내용 |
@@ -128,7 +135,7 @@ ansible-playbook -i inventory/prod.local.ini site.yml \
 | `db` | migrate / collectstatic ← **RDS 엔드포인트 필요** |
 | `service` | 서비스 활성화·기동 |
 
-### ① RDS 생성 전 — 기본 구성까지
+### ① 엔드포인트 주입 전 — 기본 구성까지
 
 ```bash
 ansible-playbook -i inventory/prod.local.ini site.yml \
@@ -142,7 +149,7 @@ ansible-playbook -i inventory/prod.local.ini site.yml \
 - DB 를 건드리는 페이지는 **500** 이 납니다. 이 단계에서는 정상입니다
 - `.env` 의 `DB_HOST` 는 아직 플레이스홀더입니다
 
-### ② RDS 생성 후 — 마이그레이션까지
+### ② 엔드포인트 주입 후 — 마이그레이션까지
 
 RDS 엔드포인트와 EFS DNS 는 **커밋하지 않습니다.**
 `inventory/prod.local.ini` 의 `[all:vars]` 에 넣어 role defaults 를 덮어씁니다.
@@ -257,7 +264,7 @@ Private IP:8000                      ↓
 
 | 항목 | 상태 |
 |---|---|
-| **RDS 엔드포인트 / EFS DNS** | `roles/django/defaults/main.yml` 에 `REPLACE-WITH-...` 로 두었습니다. terraform output 나오면 교체. 그때까지는 `--skip-tags db` (위 "실행 시나리오" 참고) |
+| **RDS 엔드포인트 / EFS DNS** | ~~미확정~~ → **생성 완료 (2026-08-20).** 단, Public 저장소라 실제 값은 커밋하지 않고 `prod.local.ini` 로 주입합니다 (위 "실행 시나리오 ②" 참고). `defaults/main.yml` 의 플레이스홀더는 의도된 것이니 교체하지 마세요 |
 | **ALB Health Check 경로** | 앱에 전용 헬스체크 URL이 없습니다(`/health` 등). `/` 는 로그인 리다이렉트가 날 수 있어 Target Group 이 Unhealthy 로 잡힐 수 있습니다. 앱에 헬스체크 뷰 추가를 요청하거나, 성공 판정 코드에 302를 포함시켜야 합니다 |
 | **ASG 확장 시 ALLOWED_HOSTS** | 지금은 고정 사설 IP 목록입니다. ASG 인스턴스 IP는 매번 바뀌고 ALB 헬스체크는 Host 헤더에 대상 IP를 넣으므로, 그 시점에 `{{ ansible_default_ipv4.address }}` 추가 또는 `/health` 뷰 도입이 필요합니다 |
 | **Static → S3 + CloudFront** | **불가.** 앱의 `requirements.txt` 에 `django-storages`, `boto3` 가 없습니다. 앱 코드 변경이 선행되어야 하며 Ansible로 해결되지 않습니다. 현재 role 은 로컬 `collectstatic` 만 수행합니다 |
