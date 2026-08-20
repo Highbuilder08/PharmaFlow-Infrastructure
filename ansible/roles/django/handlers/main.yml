@@ -7,8 +7,38 @@
   systemd:
     daemon_reload: true
 
+# ── gunicorn 재시작 ───────────────────────────────────────────────
+# notify "gunicorn 재시작" 하나로 아래 3개가 정의 순서대로 실행됩니다 (listen).
+#
+# 태그별 단독 실행에서는 재시작의 전제가 아직 갖춰지지 않았을 수 있습니다:
+#   --tags app    → 유닛 파일 없음 (config 단계가 배포)
+#                   → "Could not find the requested service pharmaflow" 로 실패
+#   --tags config → 유닛은 방금 배포됐지만 venv/gunicorn 없음 (app 단계가 설치)
+#                   → ExecStart 경로가 없어 기동 실패
+# 그래서 두 전제를 stat 으로 확인하고, 하나라도 없으면 재시작을 건너뜁니다.
+# 건너뛰어도 문제없습니다: 빠진 조각은 이후 다른 태그가 채우고,
+# 마지막 service 단계(state: started)가 최종 기동을 보장합니다.
+# 전제가 다 갖춰졌는데 재시작이 실패하면 그건 진짜 오류이므로 그대로 실패시킵니다.
+
+- name: 재시작 전제 확인 - 서비스 유닛
+  become: true
+  stat:
+    path: "/etc/systemd/system/{{ django_service_name }}.service"
+  register: _restart_unit
+  listen: gunicorn 재시작
+
+- name: 재시작 전제 확인 - gunicorn 실행파일
+  become: true
+  stat:
+    path: "{{ django_venv_dir }}/bin/gunicorn"
+  register: _restart_gunicorn
+  listen: gunicorn 재시작
+
 - name: gunicorn 재시작
   become: true
   systemd:
     name: "{{ django_service_name }}"
     state: restarted
+  when:
+    - _restart_unit.stat.exists
+    - _restart_gunicorn.stat.exists
