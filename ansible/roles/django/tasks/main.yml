@@ -147,6 +147,18 @@
 
 # ── 8. media 공유 스토리지 마운트 ─────────────────────────────────
 # EFS는 NFSv4.1 프로토콜을 씁니다. 권장 마운트 옵션은 AWS 문서 기준입니다.
+- name: EFS DNS 가 아직 플레이스홀더인지 확인
+  assert:
+    that: "'REPLACE-WITH' not in django_efs_dns"
+    fail_msg: >-
+      django_efs_dns 가 아직 플레이스홀더({{ django_efs_dns }})입니다.
+      실제 DNS 이름은 커밋하지 말고 inventory/prod.local.ini 의 [all:vars] 에
+      django_efs_dns=... 로 넣으세요. 마운트 없이 진행하려면
+      django_media_storage=local 로 두거나 --skip-tags storage 를 쓰세요.
+    quiet: true
+  when: django_media_storage == 'efs'
+  tags: [storage]
+
 - name: media 디렉터리에 EFS 마운트
   become: true
   mount:
