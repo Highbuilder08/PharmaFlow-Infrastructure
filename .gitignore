@@ -40,3 +40,8 @@ ansible/inventory/*.local.ini
 
 # Ansible local inventory
 *.local.ini
+
+# Ansible local variables
+ansible/group_vars/all/local.yml
+
+
