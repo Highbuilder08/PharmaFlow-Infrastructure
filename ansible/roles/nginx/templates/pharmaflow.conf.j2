@@ -4,6 +4,10 @@ server {
 
     client_max_body_size {{ nginx_client_max_body_size }};
 
+    location /media/ {
+        alias {{ nginx_media_mount_path }}/;
+    }
+
     location / {
         proxy_pass http://{{ nginx_backend_host }}:{{ nginx_backend_port }};
 
