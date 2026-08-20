@@ -82,3 +82,11 @@ output "efs_dns_name" {
   description = "PharmaFlow EFS DNS name"
   value       = aws_efs_file_system.pharmaflow.dns_name
 }
+
+# ── ALB ───────────────────────────────────────────────
+
+output "internal_alb_dns_name" {
+  description = "Internal ALB DNS name"
+  value       = aws_lb.internal.dns_name
+}
+
