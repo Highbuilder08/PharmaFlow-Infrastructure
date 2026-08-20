@@ -1,0 +1,7 @@
+---
+- name: PharmaFlow Nginx 웹 서버 구성
+  hosts: nginx
+  become: true
+
+  roles:
+    - nginx

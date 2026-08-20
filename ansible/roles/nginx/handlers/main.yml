@@ -1,0 +1,6 @@
+---
+- name: nginx 재시작
+  become: true
+  systemd:
+    name: "{{ nginx_service_name }}"
+    state: restarted

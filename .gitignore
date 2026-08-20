@@ -33,6 +33,7 @@ ansible/group_vars/vault.yml
 ansible/group_vars/**/vault.yml
 ansible/**/*.retry
 ansible/inventory/*.local.ini
+ansible/group_vars/all/local.yml
 
 # OS / Editor
 .DS_Store
@@ -40,8 +41,3 @@ ansible/inventory/*.local.ini
 
 # Ansible local inventory
 *.local.ini
-
-# Ansible local variables
-ansible/group_vars/all/local.yml
-
-
