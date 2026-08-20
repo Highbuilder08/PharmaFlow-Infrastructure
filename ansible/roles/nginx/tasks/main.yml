@@ -1,0 +1,84 @@
+---
+# PharmaFlow Nginx 웹 서버 구성
+
+# ── 1. Nginx / NFS 패키지 설치 ───────────────────────────────────
+- name: apt 캐시 갱신
+  become: true
+  apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Nginx 및 NFS 패키지 설치
+  become: true
+  apt:
+    name:
+      - nginx
+      - nfs-common
+    state: present
+
+# ── 2. EFS media 준비 ─────────────────────────────────────────────
+- name: Nginx media 디렉터리 생성
+  become: true
+  file:
+    path: "{{ nginx_media_mount_path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: EFS DNS 플레이스홀더 확인
+  assert:
+    that:
+      - "'REPLACE-WITH' not in nginx_efs_dns"
+    fail_msg: "nginx_efs_dns에 실제 EFS DNS를 설정하세요."
+  when: nginx_media_storage == 'efs'
+
+- name: EFS media 마운트
+  become: true
+  mount:
+    path: "{{ nginx_media_mount_path }}"
+    src: "{{ nginx_efs_dns }}:/"
+    fstype: nfs4
+    opts: nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport,_netdev
+    state: mounted
+  when: nginx_media_storage == 'efs'
+
+# ── 3. 사이트 설정 배포 ──────────────────────────────────────────
+- name: PharmaFlow Nginx 설정 배포
+  become: true
+  template:
+    src: pharmaflow.conf.j2
+    dest: "/etc/nginx/sites-available/{{ nginx_site_name }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: nginx 재시작
+
+- name: PharmaFlow 사이트 활성화
+  become: true
+  file:
+    src: "/etc/nginx/sites-available/{{ nginx_site_name }}"
+    dest: "/etc/nginx/sites-enabled/{{ nginx_site_name }}"
+    state: link
+  notify: nginx 재시작
+
+- name: 기본 Nginx 사이트 비활성화
+  become: true
+  file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: nginx 재시작
+
+# ── 4. Nginx 설정 검증 ────────────────────────────────────────────
+- name: Nginx 설정 문법 검사
+  become: true
+  command: nginx -t
+  changed_when: false
+
+# ── 5. 서비스 기동 ────────────────────────────────────────────────
+- name: Nginx 서비스 활성화 및 시작
+  become: true
+  systemd:
+    name: "{{ nginx_service_name }}"
+    state: started
+    enabled: true
