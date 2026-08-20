@@ -14,8 +14,8 @@
 # ── Bastion ───────────────────────────────────────────────
 
 output "bastion_public_ip" {
-  description = "Public IP address of the Bastion host"
-  value       = aws_instance.bastion.public_ip
+  description = "Elastic IP address of the Bastion host"
+  value       = aws_eip.bastion.public_ip
 }
 
 output "bastion_private_ip" {
@@ -45,12 +45,15 @@ output "private_subnet_ids" {
   }
 }
 
+# ── NAT ───────────────────────────────────────────────
+
 output "nat_public_ip" {
-  description = "NAT Instance 공인 IP"
-  value       = aws_instance.nat.public_ip
+  description = "Elastic IP address of the NAT instance"
+  value       = aws_eip.nat.public_ip
 }
 
 # ── Nginx ───────────────────────────────────────────────
+
 output "nginx_base_private_ip" {
   description = "Private IP address of the Nginx base instance"
   value       = aws_instance.nginx.private_ip

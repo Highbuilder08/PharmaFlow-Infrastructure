@@ -37,3 +37,6 @@ ansible/inventory/*.local.ini
 # OS / Editor
 .DS_Store
 .vscode/
+
+# Ansible local inventory
+*.local.ini
