@@ -90,3 +90,15 @@ output "internal_alb_dns_name" {
   value       = aws_lb.internal.dns_name
 }
 
+# ── AMI ───────────────────────────────────────────────
+
+output "django_golden_ami_id" {
+  description = "Golden AMI ID for Django"
+  value       = aws_ami_from_instance.django_golden.id
+}
+
+output "nginx_golden_ami_id" {
+  description = "Golden AMI ID for Nginx"
+  value       = aws_ami_from_instance.nginx_golden.id
+}
+
