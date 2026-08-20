@@ -12,7 +12,7 @@
 #   service   서비스 활성화·기동
 #
 # RDS 생성 전에는 db 를 빼고 돌립니다:
-#   ansible-playbook -i inventory/prod.local.ini site.yml \
+#   ansible-playbook -i inventory/prod.local.ini django.yml \
 #       --limit django --ask-vault-pass --skip-tags db
 #
 # ⚠️ --tags db 만 단독 실행해도 되도록 SECRET_KEY 로드 태스크에 db 태그를

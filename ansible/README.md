@@ -30,7 +30,7 @@ ansible/
 │   └── all/                    ⚠️ 폴더 이름 = 그룹 이름. 반드시 all/ 아래에 둘 것
 │       ├── vars.yml            공통 변수 (비밀값 아님)
 │       └── vault.yml.example   비밀값 템플릿
-├── site.yml                    배포 지휘서
+├── django.yml                    배포 지휘서
 └── roles/
     ├── django/                 팀원2 담당
     └── nginx/                  팀원3 담당 (예정)
@@ -111,11 +111,11 @@ ssh -J ubuntu@<BASTION-PUBLIC-IP> ubuntu@<DJANGO-PRIVATE-IP> exit   # 여기서 
 ansible -i inventory/prod.local.ini django -m ping
 
 # 5) 예행연습 - 실제로 바꾸지 않고 뭐가 바뀔지만 확인
-ansible-playbook -i inventory/prod.local.ini site.yml \
+ansible-playbook -i inventory/prod.local.ini django.yml \
     --limit django --ask-vault-pass --check --diff --skip-tags db
 
 # 6) 실제 적용  ← 아래 "실행 시나리오" 를 먼저 읽으세요
-ansible-playbook -i inventory/prod.local.ini site.yml \
+ansible-playbook -i inventory/prod.local.ini django.yml \
     --limit django --ask-vault-pass --skip-tags db
 ```
 
@@ -138,7 +138,7 @@ ansible-playbook -i inventory/prod.local.ini site.yml \
 ### ① 엔드포인트 주입 전 — 기본 구성까지
 
 ```bash
-ansible-playbook -i inventory/prod.local.ini site.yml \
+ansible-playbook -i inventory/prod.local.ini django.yml \
     --limit django --ask-vault-pass --skip-tags db
 ```
 
@@ -174,11 +174,11 @@ django_efs_dns=<EFS DNS 이름>
 
 ```bash
 # 마이그레이션만 추가로
-ansible-playbook -i inventory/prod.local.ini site.yml \
+ansible-playbook -i inventory/prod.local.ini django.yml \
     --limit django --ask-vault-pass --tags db
 
 # 또는 전체
-ansible-playbook -i inventory/prod.local.ini site.yml \
+ansible-playbook -i inventory/prod.local.ini django.yml \
     --limit django --ask-vault-pass
 ```
 
@@ -190,7 +190,7 @@ ansible-playbook -i inventory/prod.local.ini site.yml \
 > 확정 값은 반드시 위 경로로 커밋하세요.
 >
 > ```bash
-> ansible-playbook -i inventory/prod.local.ini site.yml \
+> ansible-playbook -i inventory/prod.local.ini django.yml \
 >     --limit django --ask-vault-pass --tags db \
 >     -e django_db_host=<RDS-엔드포인트>
 > ```
@@ -202,7 +202,7 @@ ansible-playbook -i inventory/prod.local.ini site.yml \
 ## EC2 없이 지금 할 수 있는 검증
 
 ```bash
-ansible-playbook site.yml --syntax-check   # 문법 검사 (접속 안 함)
+ansible-playbook django.yml --syntax-check   # 문법 검사 (접속 안 함)
 ansible-inventory --graph                  # 인벤토리 확인
 ansible-inventory --host django-01         # 변수가 실제로 로드되는지 확인
 ```
