@@ -156,9 +156,9 @@ resource "aws_vpc_security_group_ingress_rule" "internal_alb_from_nginx" {
   security_group_id            = aws_security_group.internal_alb.id
   referenced_security_group_id = aws_security_group.nginx.id
 
-  from_port   = 8000
+  from_port   = 80
   ip_protocol = "tcp"
-  to_port     = 8000
+  to_port     = 80
 }
 
 resource "aws_vpc_security_group_egress_rule" "internal_alb_all" {
