@@ -5,58 +5,26 @@
 #    같은 폴더의 vault.yml 에 넣습니다.
 #    vault.yml 은 .gitignore 로 커밋이 차단되어 있습니다.
 #
-# ⚠️ group_vars 는 "폴더/파일 이름 = 그룹 이름" 규칙으로 로드됩니다.
-#    group_vars/all/ 아래 파일들은 모든 호스트에 적용됩니다.
-#
-# 확인 방법:
-#   ansible-inventory --host django-01
-#   ansible-inventory --host nginx-01
-
+# ⚠️ 실제 환경 IP/DNS 값은 공용 Git 코드에 넣지 않습니다.
+#    팀장 Server1의 group_vars/all/local.yml 에서 실제 값으로 덮어씁니다.
 
 # ── 서버 사설 IP ──────────────────────────────────────────────────
-# VPC       : 10.23.0.0/16
-# Private A : 10.23.11.0/24
-# Private C : 10.23.12.0/24
-#
-# Terraform output 이 변경되면 실제 값으로 교체합니다.
-#
-#   cd environments/prod
-#   terraform output django_base_private_ip
-#   terraform output nginx_base_private_ip
-
-django_private_ip: 10.23.11.210
-nginx_private_ip: 10.23.11.232
-
+django_private_ip: "REPLACE-WITH-DJANGO-PRIVATE-IP"
+nginx_private_ip: "REPLACE-WITH-NGINX-PRIVATE-IP"
 
 # ── Django ALLOWED_HOSTS ──────────────────────────────────────────
-# 초기 구축 단계:
-#   Nginx → Django Private IP:8000 으로 직접 proxy_pass
+# 초기 구축:
+#   Nginx → Django Private IP:8000
 #
-# 최종 구축 단계:
+# 최종 구축:
 #   Nginx → Internal ALB → Django ASG
-#
-# ASG 전환 후에는 Django 인스턴스 IP가 동적으로 변경되므로
-# ALB 헬스체크용 Host 처리도 추가 검토합니다.
-
 django_allowed_hosts:
   - "{{ django_private_ip }}"
   - "{{ nginx_private_ip }}"
 
-
 # ── EFS 공용 스토리지 ─────────────────────────────────────────────
-# Django와 Nginx가 동일한 media 파일을 공유하기 위한 EFS입니다.
-#
-# 팀장 Terraform에서 EFS 생성 후 output으로 나온 DNS 이름으로 교체합니다.
-#
-# 예:
-#   fs-0123456789abcdef0.efs.ap-northeast-2.amazonaws.com
-#
-# Terraform output 예:
-#   cd environments/prod
-#   terraform output efs_dns_name
-
+# 실제 EFS DNS는 group_vars/all/local.yml 에서 설정합니다.
 efs_dns: "REPLACE-WITH-EFS-DNS"
-
 
 # ── DB ────────────────────────────────────────────────────────────
 # django_db_host 는 이 파일에 두지 않습니다.
@@ -65,5 +33,4 @@ efs_dns: "REPLACE-WITH-EFS-DNS"
 # 실제 RDS 생성 후 Terraform output 값으로 교체합니다.
 #
 # group_vars 는 role defaults 보다 우선순위가 높기 때문에
-# 이곳에 django_db_host 를 정의하면 Django Role의 설정을 덮어쓰게 됩니다.
-# 따라서 DB Host는 의도적으로 이 파일에서 관리하지 않습니다.
+# 이곳에 django_db_host 를 정의하면 Django Role 설정을 덮어씁니다.

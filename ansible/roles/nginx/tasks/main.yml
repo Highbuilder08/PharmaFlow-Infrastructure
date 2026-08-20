@@ -16,13 +16,8 @@
       - nfs-common
     state: present
 
-# ── 2. EFS media 마운트 ───────────────────────────────────────────
-# 최종 구조에서는 Django와 Nginx가 동일한 EFS의 media 파일을 사용합니다.
-#
-# nginx_media_storage 가 efs 일 때만 실제 마운트를 수행합니다.
-# 초기 Base EC2 검증 단계에서는 local 로 두면 이 단계가 건너뛰어집니다.
-
-- name: Nginx media 마운트 디렉터리 생성
+# ── 2. EFS media 준비 ─────────────────────────────────────────────
+- name: Nginx media 디렉터리 생성
   become: true
   file:
     path: "{{ nginx_media_mount_path }}"
@@ -30,6 +25,12 @@
     owner: root
     group: root
     mode: "0755"
+
+- name: EFS DNS 플레이스홀더 확인
+  assert:
+    that:
+      - "'REPLACE-WITH' not in nginx_efs_dns"
+    fail_msg: "nginx_efs_dns에 실제 EFS DNS를 설정하세요."
   when: nginx_media_storage == 'efs'
 
 - name: EFS media 마운트
