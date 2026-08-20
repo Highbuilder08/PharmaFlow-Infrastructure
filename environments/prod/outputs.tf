@@ -97,6 +97,11 @@ output "django_golden_ami_id" {
   value       = aws_ami_from_instance.django_golden.id
 }
 
+output "django_golden_ami_v2_id" {
+  description = "Django Golden AMI v2 ID"
+  value       = aws_ami_from_instance.django_golden_v2.id
+}
+
 output "nginx_golden_ami_id" {
   description = "Golden AMI ID for Nginx"
   value       = aws_ami_from_instance.nginx_golden.id
@@ -112,5 +117,12 @@ output "django_launch_template_id" {
 output "nginx_launch_template_id" {
   description = "Nginx Launch Template ID"
   value       = aws_launch_template.nginx.id
+}
+
+# ── Django ASG ───────────────────────────────────────────────
+
+output "django_asg_name" {
+  description = "Django Auto Scaling Group name"
+  value       = aws_autoscaling_group.django.name
 }
 
