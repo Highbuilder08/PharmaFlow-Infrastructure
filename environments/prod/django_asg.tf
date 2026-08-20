@@ -6,7 +6,7 @@
 resource "aws_autoscaling_group" "django" {
   name = "pharmaflow-django-asg"
 
-  min_size         = 2
+  min_size         = 0
   max_size         = 4
   desired_capacity = 2
 
@@ -58,6 +58,12 @@ resource "aws_autoscaling_group" "django" {
     key                 = "Role"
     value               = "django"
     propagate_at_launch = true
+  }
+
+  lifecycle {
+    ignore_changes = [
+      desired_capacity
+    ]
   }
 }
 
