@@ -90,6 +90,11 @@ output "internal_alb_dns_name" {
   value       = aws_lb.internal.dns_name
 }
 
+output "public_alb_dns_name" {
+  description = "Public ALB DNS name"
+  value       = aws_lb.public.dns_name
+}
+
 # ── AMI ───────────────────────────────────────────────
 
 output "django_golden_ami_id" {
