@@ -11,8 +11,8 @@ resource "aws_autoscaling_group" "django" {
   desired_capacity = 2
 
   vpc_zone_identifier = [
-    aws_subnet.private_a.id,
-    aws_subnet.private_c.id
+    aws_subnet.app_private_a.id,
+    aws_subnet.app_private_c.id
   ]
 
   target_group_arns = [
