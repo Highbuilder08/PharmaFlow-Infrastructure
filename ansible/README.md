@@ -242,26 +242,30 @@ ansible-inventory --host django-01         # 변수가 실제로 로드되는지
 ## 구축 단계 (Nginx 연동)
 
 ```
-[초기 구축 단계]                    [최종 구축 단계]
+[초기 구축 단계 - 종료됨]           [최종 구축 단계 - 현재]
 
-Nginx                              Nginx ASG
-  ↓                                  ↓
-Django Base EC2                    Internal ALB
-Private IP:8000                      ↓
-                                   Django ASG
-
-※ 기준 서버 동작 검증을 위한        ※ Internal ALB 구축 후
-   임시 구성                          proxy_pass 를 Internal ALB DNS 로 변경
+Nginx                              Nginx (ASG 예정)
+  ↓ 사설 IP:8000 직결                ↓
+Django Base EC2                    Internal ALB (pharmaflow-internal-alb)
+                                     ↓
+                                   Django ASG (min 0 / desired 2 / max 4)
 ```
 
-초기 단계에서 팀원3과 맞춰야 할 것:
+Internal ALB·Django ASG 가 구축되어 **최종 단계 구성이 현재 상태**입니다.
+초기 단계의 잔재 2개가 남아 있으며, 정리 시점이 됐습니다:
+
+- **팀원3**: `nginx_backend_host` 가 아직 `django_private_ip`(Base EC2 고정 IP)입니다.
+  Internal ALB DNS 로 전환해야 ASG 인스턴스로 분산됩니다. ALB DNS 는 커밋 금지이므로
+  `local.yml` 에 변수로 넣는 방식을 권장합니다 (예: `internal_alb_dns`)
+- **팀장**: `environments/prod/django.tf` 의 Nginx SG → Django 8000
+  **임시 규칙(`django_app_from_nginx_temp`)이 아직 남아 있습니다.**
+  "Internal ALB 생성 후 삭제" 조건이 충족됐으므로 삭제 대상입니다
+
+여전히 유효한 전제:
 
 - 이 role 은 Gunicorn 을 `0.0.0.0:8000` 에 바인딩합니다
-  (앱 저장소 `gunicorn.conf.py` 기본값 `127.0.0.1:8000` 으로는 다른 EC2에서 접근 불가)
-- 팀원3의 Nginx `proxy_pass` 는 `http://<Django Base EC2 사설 IP>:8000`
-- Django SG는 8000 인바운드를 **Internal ALB SG에만** 허용합니다.
-  Internal ALB가 없는 초기 단계용으로 `environments/prod/django.tf` 에
-  Nginx SG → Django 8000 임시 규칙을 두었습니다. **Internal ALB 생성 후 삭제**하세요.
+  (앱 저장소 `gunicorn.conf.py` 기본값 `127.0.0.1:8000` 으로는 외부 접근 불가)
+- Django SG 8000 인바운드는 **Internal ALB SG에서만** 허용
 
 ## Golden AMI 파이프라인 — role 을 고치면 여기까지 해야 반영됩니다
 
@@ -310,6 +314,7 @@ aws ec2 describe-instances \
 | EFS 마운트 | `findmnt ~ubuntu/djangowork/PharmaFlow/media` | nfs4, EFS DNS 표시 |
 | RDS 연결 | `cd ~/djangowork/PharmaFlow && (set -a; . ./.env; set +a; ~/djangoenv/bin/python manage.py check --database default)` | `System check identified no issues` |
 | 응답 확인 | `curl -s -o /dev/null -w '%{http_code}' localhost:8000/` | 200 또는 302 |
+| Django 로그 | `journalctl -u pharmaflow -n 50 --no-pager` | Traceback/ERROR 없음, gunicorn 워커 기동 로그 |
 
 Target 상태는 인스턴스 밖에서:
 
