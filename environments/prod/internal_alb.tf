@@ -57,17 +57,6 @@ resource "aws_lb_target_group" "django" {
 
 
 # ---------------------------------------------------------
-# Django Base EC2 Target Registration
-# ---------------------------------------------------------
-
-resource "aws_lb_target_group_attachment" "django_base" {
-  target_group_arn = aws_lb_target_group.django.arn
-  target_id        = aws_instance.django_base.id
-  port             = 8000
-}
-
-
-# ---------------------------------------------------------
 # Internal ALB HTTP Listener
 # ---------------------------------------------------------
 
