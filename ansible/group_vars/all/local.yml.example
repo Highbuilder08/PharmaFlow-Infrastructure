@@ -1,0 +1,27 @@
+---
+# 실제 환경 값 템플릿입니다. 같은 폴더의 local.yml 로 복사한 뒤 채우세요.
+#
+#   cp group_vars/all/local.yml.example group_vars/all/local.yml
+#   vi group_vars/all/local.yml
+#
+# local.yml 은 .gitignore 로 커밋이 차단되어 있습니다.
+#
+# ⚠️ 이 저장소는 Public 입니다. 아래 값들(사설 IP, RDS 엔드포인트, EFS DNS)을
+#    vars.yml 등 커밋되는 파일로 옮기지 마세요. AWS 리소스 식별자는 전 세계에서
+#    resolve 되며, 이미 공개된 VPC CIDR·SG 와 합쳐지면 내부 구성이 드러납니다.
+#
+# ⚠️ 예전 방식(inventory/prod.local.ini 의 [all:vars])과 혼용하지 마세요.
+#    group_vars/all/ 이 인벤토리 변수보다 우선순위가 높아서, 양쪽에 다른 값이
+#    있으면 이 파일이 조용히 이깁니다. 값은 여기 한 곳에만 둡니다.
+#
+# 값 확인: cd environments/prod && terraform output
+# 로드 확인: ansible-inventory -i inventory/prod.local.ini --host django-01
+
+# ── 서버 사설 IP ──────────────────────────────────────────────────
+django_private_ip: 10.23.11.XXX     # ← terraform output django_base_private_ip
+nginx_private_ip: 10.23.11.XXX      # ← terraform output nginx_base_private_ip
+
+# ── AWS 리소스 엔드포인트 ─────────────────────────────────────────
+# efs_dns 는 django/nginx role 양쪽이 공용으로 씁니다.
+efs_dns: fs-XXXXXXXXXXXXXXXXX.efs.ap-northeast-2.amazonaws.com   # ← efs_dns_name
+django_db_host: XXXX.XXXXXXXXXX.ap-northeast-2.rds.amazonaws.com # ← rds_endpoint

@@ -152,8 +152,8 @@
     that: "'REPLACE-WITH' not in django_efs_dns"
     fail_msg: >-
       django_efs_dns 가 아직 플레이스홀더({{ django_efs_dns }})입니다.
-      실제 DNS 이름은 커밋하지 말고 inventory/prod.local.ini 의 [all:vars] 에
-      django_efs_dns=... 로 넣으세요. 마운트 없이 진행하려면
+      실제 DNS 이름은 커밋하지 말고 group_vars/all/local.yml 에
+      efs_dns: ... 로 넣으세요. 마운트 없이 진행하려면
       django_media_storage=local 로 두거나 --skip-tags storage 를 쓰세요.
     quiet: true
   when: django_media_storage == 'efs'
@@ -224,9 +224,9 @@
         that: "'REPLACE-WITH' not in django_db_host"
         fail_msg: >-
           django_db_host 가 아직 플레이스홀더({{ django_db_host }})입니다.
-          RDS 생성 전이라면 --skip-tags db 로 이 단계를 건너뛰고,
-          RDS가 준비됐다면 roles/django/defaults/main.yml 의
-          django_db_host 를 실제 엔드포인트로 교체하세요.
+          실제 엔드포인트는 커밋하지 말고 group_vars/all/local.yml 에
+          django_db_host: ... 로 넣으세요 (local.yml.example 참고).
+          DB 없이 진행하려면 --skip-tags db 로 이 단계를 건너뜁니다.
         quiet: true
 
     - name: DB 마이그레이션

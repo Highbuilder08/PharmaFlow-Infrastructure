@@ -48,11 +48,13 @@ ansible/
 > | 파일 | 없으면 |
 > |---|---|
 > | `group_vars/all/vault.yml` | `.env` 배포 단계에서 `django_db_password is undefined` |
+> | `group_vars/all/local.yml` | 사설 IP·RDS·EFS 값이 없어 assert 또는 undefined 로 실패 |
 > | `inventory/prod.local.ini` | 대상 호스트가 없어 ping 부터 실패 |
 > | `~/.ssh/pharmaflow-infra-key.pem` | SSH 인증 실패 |
 >
-> `prod.local.ini` 에는 IP 뿐 아니라 **RDS 엔드포인트·EFS DNS 도 들어갑니다.**
-> 이 값들은 커밋되지 않으므로 pull 로 오지 않습니다. 아래 "실행 시나리오 ②" 참고.
+> 실제 환경 값(사설 IP, RDS 엔드포인트, EFS DNS)은 전부 **`local.yml` 한 곳**에 둡니다.
+> 예전 방식(`prod.local.ini` 의 `[all:vars]`)과 혼용하지 마세요 — `group_vars` 가
+> 인벤토리 변수보다 우선이라, 양쪽 값이 다르면 `local.yml` 이 조용히 이깁니다.
 
 ```bash
 cd ansible
@@ -66,11 +68,15 @@ ansible-vault encrypt group_vars/all/vault.yml # 암호화
 cp <받은키>.pem ~/.ssh/pharmaflow-infra-key.pem
 chmod 600 ~/.ssh/pharmaflow-infra-key.pem
 
-# 3) 인벤토리 로컬 사본 생성 (실제 IP는 여기에만 적습니다)
+# 3) 인벤토리 로컬 사본 생성 (대상 서버 사설 IP)
 cp inventory/prod.ini inventory/prod.local.ini
-vi inventory/prod.local.ini                    # 서버 사설 IP + RDS/EFS 엔드포인트 입력
+vi inventory/prod.local.ini                    # ansible_host 만 실제 값으로
 
-# 4) Bastion 경유 설정 (~/.ssh/config)
+# 4) 실제 환경 값 파일 생성 (사설 IP, RDS 엔드포인트, EFS DNS)
+cp group_vars/all/local.yml.example group_vars/all/local.yml
+vi group_vars/all/local.yml
+
+# 5) Bastion 경유 설정 (~/.ssh/config)
 #    prod.ini 하단의 주석 샘플대로 채웁니다. Bastion 공인 IP는 여기에만 들어갑니다.
 vi ~/.ssh/config
 ```
@@ -123,7 +129,7 @@ ansible-playbook -i inventory/prod.local.ini django.yml \
 
 `roles/django/defaults/main.yml` 의 `django_db_host` / `django_efs_dns` 는
 일부러 `REPLACE-WITH-...` 플레이스홀더로 커밋되어 있습니다 (아래 🔒 참고).
-실제 값을 `prod.local.ini` 에 넣기 **전에** 전체 실행하면 반드시 실패합니다.
+실제 값을 `group_vars/all/local.yml` 에 넣기 **전에** 전체 실행하면 반드시 실패합니다.
 그래서 role 을 태그로 끊어두었습니다.
 
 | 태그 | 내용 |
@@ -152,12 +158,11 @@ ansible-playbook -i inventory/prod.local.ini django.yml \
 ### ② 엔드포인트 주입 후 — 마이그레이션까지
 
 RDS 엔드포인트와 EFS DNS 는 **커밋하지 않습니다.**
-`inventory/prod.local.ini` 의 `[all:vars]` 에 넣어 role defaults 를 덮어씁니다.
+`group_vars/all/local.yml` 에 넣어 role defaults 를 덮어씁니다 (`local.yml.example` 참고).
 
-```ini
-[all:vars]
-django_db_host=<RDS 엔드포인트>
-django_efs_dns=<EFS DNS 이름>
+```yaml
+django_db_host: <RDS 엔드포인트>
+efs_dns: <EFS DNS 이름>        # django/nginx role 공용
 ```
 
 > 🔒 **왜 커밋하지 않나**
@@ -195,9 +200,7 @@ ansible-playbook -i inventory/prod.local.ini django.yml \
 >     -e django_db_host=<RDS-엔드포인트>
 > ```
 
-> ⚠️ **이 role 은 아직 실서버에서 실행된 이력이 없습니다.**
-> 지금까지 검증한 것은 `--syntax-check`, `--list-tasks`(태그 조합), 템플릿 렌더링뿐입니다.
-> 최초 실행에서 실패하면 아래 "지뢰 3개" 를 먼저 확인하세요.
+실행에 실패하면 아래 "지뢰 3개" 를 먼저 확인하세요.
 
 ## EC2 없이 지금 할 수 있는 검증
 
@@ -239,34 +242,98 @@ ansible-inventory --host django-01         # 변수가 실제로 로드되는지
 ## 구축 단계 (Nginx 연동)
 
 ```
-[초기 구축 단계]                    [최종 구축 단계]
+[초기 구축 단계 - 종료됨]           [최종 구축 단계 - 현재]
 
-Nginx                              Nginx ASG
-  ↓                                  ↓
-Django Base EC2                    Internal ALB
-Private IP:8000                      ↓
-                                   Django ASG
-
-※ 기준 서버 동작 검증을 위한        ※ Internal ALB 구축 후
-   임시 구성                          proxy_pass 를 Internal ALB DNS 로 변경
+Nginx                              Nginx (ASG 예정)
+  ↓ 사설 IP:8000 직결                ↓
+Django Base EC2                    Internal ALB (pharmaflow-internal-alb)
+                                     ↓
+                                   Django ASG (min 0 / desired 2 / max 4)
 ```
 
-초기 단계에서 팀원3과 맞춰야 할 것:
+Internal ALB·Django ASG 가 구축되어 **최종 단계 구성이 현재 상태**입니다.
+초기 단계의 잔재 2개가 남아 있으며, 정리 시점이 됐습니다:
+
+- **팀원3**: `nginx_backend_host` 가 아직 `django_private_ip`(Base EC2 고정 IP)입니다.
+  Internal ALB DNS 로 전환해야 ASG 인스턴스로 분산됩니다. ALB DNS 는 커밋 금지이므로
+  `local.yml` 에 변수로 넣는 방식을 권장합니다 (예: `internal_alb_dns`)
+- **팀장**: `environments/prod/django.tf` 의 Nginx SG → Django 8000
+  **임시 규칙(`django_app_from_nginx_temp`)이 아직 남아 있습니다.**
+  "Internal ALB 생성 후 삭제" 조건이 충족됐으므로 삭제 대상입니다
+
+여전히 유효한 전제:
 
 - 이 role 은 Gunicorn 을 `0.0.0.0:8000` 에 바인딩합니다
-  (앱 저장소 `gunicorn.conf.py` 기본값 `127.0.0.1:8000` 으로는 다른 EC2에서 접근 불가)
-- 팀원3의 Nginx `proxy_pass` 는 `http://<Django Base EC2 사설 IP>:8000`
-- Django SG는 8000 인바운드를 **Internal ALB SG에만** 허용합니다.
-  Internal ALB가 없는 초기 단계용으로 `environments/prod/django.tf` 에
-  Nginx SG → Django 8000 임시 규칙을 두었습니다. **Internal ALB 생성 후 삭제**하세요.
+  (앱 저장소 `gunicorn.conf.py` 기본값 `127.0.0.1:8000` 으로는 외부 접근 불가)
+- Django SG 8000 인바운드는 **Internal ALB SG에서만** 허용
+
+## Golden AMI 파이프라인 — role 을 고치면 여기까지 해야 반영됩니다
+
+ASG 인스턴스는 **AMI 에 구워진 상태 그대로** 뜹니다. Launch Template 에 user_data 가
+없으므로 부팅 시 아무것도 실행되지 않고, Ansible 이 다시 돌지도 않습니다.
+
+```
+django role 수정
+   ↓  ansible-playbook (base EC2 에 재적용)
+Django Base EC2
+   ↓  terraform (aws_ami_from_instance 새 버전, 예: v3)
+Golden AMI
+   ↓  terraform (launch_template image_id 갱신)
+Launch Template
+   ↓  인스턴스 교체 (instance refresh 또는 desired 0→N)
+ASG 인스턴스
+```
+
+> ⚠️ **base EC2 를 손으로 고치지 마세요.**
+> 손수정은 ① 다음 Ansible 실행이 덮어쓰고 ② 그 전에 AMI 를 구우면 코드에 없는
+> 상태가 ASG 전체로 복제됩니다. golden AMI v1→v2 교체가 바로 이 사례입니다
+> (`.env` 의 ALLOWED_HOSTS 수동 변경 → v2 재베이크). 지금은 그 결정이
+> `vars.yml` 의 `django_allowed_hosts: ["*"]` 로 코드에 회수되어 있으므로,
+> **base EC2 재적용 → 재베이크를 해도 같은 상태가 재현됩니다.**
+
+참고: AMI 에는 `.env`(DB 비밀번호 포함)와 `.secret_key` 가 그대로 들어갑니다.
+ASG 인스턴스들이 SECRET_KEY 를 공유하는 것은 의도된 동작입니다(세션·서명 호환).
+
+## ASG 배포 후 재검증 체크리스트 (Server1 에서)
+
+ASG 인스턴스 IP 는 매번 바뀌므로 먼저 IP 를 확인합니다. 태그로 조회:
+
+```bash
+aws ec2 describe-instances \
+  --filters "Name=tag:Name,Values=pharmaflow-django-asg" \
+            "Name=instance-state-name,Values=running" \
+  --query "Reservations[].Instances[].PrivateIpAddress" --output text
+```
+
+각 인스턴스에 Bastion 경유로 접속해서 (`ssh <사설IP>` — ~/.ssh/config 가 처리):
+
+| 항목 | 명령 | 기대 결과 |
+|---|---|---|
+| 서비스 | `systemctl is-active pharmaflow` | `active` |
+| Gunicorn 바인딩 | `ss -ltn 'sport = :8000'` | `0.0.0.0:8000` LISTEN |
+| EFS 마운트 | `findmnt ~ubuntu/djangowork/PharmaFlow/media` | nfs4, EFS DNS 표시 |
+| RDS 연결 | `cd ~/djangowork/PharmaFlow && (set -a; . ./.env; set +a; ~/djangoenv/bin/python manage.py check --database default)` | `System check identified no issues` |
+| 응답 확인 | `curl -s -o /dev/null -w '%{http_code}' localhost:8000/` | 200 또는 302 |
+| Django 로그 | `journalctl -u pharmaflow -n 50 --no-pager` | Traceback/ERROR 없음, gunicorn 워커 기동 로그 |
+
+Target 상태는 인스턴스 밖에서:
+
+```bash
+aws elbv2 describe-target-health \
+  --target-group-arn $(aws elbv2 describe-target-groups \
+      --names pharmaflow-django-tg --query 'TargetGroups[0].TargetGroupArn' --output text) \
+  --query 'TargetHealthDescriptions[].[Target.Id,TargetHealth.State]' --output table
+```
+
+전부 `healthy` 면 Django 서비스 인프라 검증 완료입니다.
 
 ## 팀 확인이 필요한 미확정 사항
 
 | 항목 | 상태 |
 |---|---|
-| **RDS 엔드포인트 / EFS DNS** | ~~미확정~~ → **생성 완료 (2026-08-20).** 단, Public 저장소라 실제 값은 커밋하지 않고 `prod.local.ini` 로 주입합니다 (위 "실행 시나리오 ②" 참고). `defaults/main.yml` 의 플레이스홀더는 의도된 것이니 교체하지 마세요 |
-| **ALB Health Check 경로** | 앱에 전용 헬스체크 URL이 없습니다(`/health` 등). `/` 는 로그인 리다이렉트가 날 수 있어 Target Group 이 Unhealthy 로 잡힐 수 있습니다. 앱에 헬스체크 뷰 추가를 요청하거나, 성공 판정 코드에 302를 포함시켜야 합니다 |
-| **ASG 확장 시 ALLOWED_HOSTS** | 지금은 고정 사설 IP 목록입니다. ASG 인스턴스 IP는 매번 바뀌고 ALB 헬스체크는 Host 헤더에 대상 IP를 넣으므로, 그 시점에 `{{ ansible_default_ipv4.address }}` 추가 또는 `/health` 뷰 도입이 필요합니다 |
+| **RDS 엔드포인트 / EFS DNS** | ~~미확정~~ → **생성 완료.** Public 저장소라 실제 값은 커밋하지 않고 `group_vars/all/local.yml` 로 주입합니다 (위 "실행 시나리오 ②"). `defaults/main.yml` 의 플레이스홀더는 의도된 것이니 교체하지 마세요 |
+| **ALB Health Check 경로** | ~~미확정~~ → **해소.** `internal_alb.tf` 가 `path=/`, `matcher=200-399` 로 302 리다이렉트를 정상으로 판정합니다. 앱에 `/health` 뷰가 생기면 `path=/health`, `matcher=200` 으로 좁히는 게 더 정확합니다 (선택) |
+| **ASG 확장 시 ALLOWED_HOSTS** | ~~미확정~~ → **해소(트레이드오프).** `django_allowed_hosts: ["*"]` 채택. ALB 헬스체크가 Host 헤더에 매번 바뀌는 인스턴스 IP를 넣기 때문입니다. Host 헤더 검증을 포기하는 대신 Private Subnet + SG(Internal ALB→8000만 허용)로 접근 자체를 격리합니다. 앱에 `/health` 뷰가 생기면 목록 방식으로 되돌릴 수 있습니다 |
 | **Static → S3 + CloudFront** | **불가.** 앱의 `requirements.txt` 에 `django-storages`, `boto3` 가 없습니다. 앱 코드 변경이 선행되어야 하며 Ansible로 해결되지 않습니다. 현재 role 은 로컬 `collectstatic` 만 수행합니다 |
 
 ## 주의

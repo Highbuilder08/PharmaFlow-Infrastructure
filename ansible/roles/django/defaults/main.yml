@@ -44,9 +44,9 @@ django_debug: "False"
 # ⚠️ 실제 엔드포인트를 여기 적지 마세요. 이 저장소는 Public 입니다.
 #    RDS 엔드포인트는 전 세계에서 resolve 되는 AWS 리소스 식별자라,
 #    이미 공개된 VPC CIDR·SG 와 합쳐지면 내부 구성이 그대로 드러납니다.
-#    실제 값은 커밋되지 않는 inventory/prod.local.ini 의 [all:vars] 에 둡니다.
-#      django_db_host=<RDS 엔드포인트>
-#    (우선순위: role defaults < 인벤토리 [all:vars] 라서 아래 값이 덮어써집니다)
+#    실제 값은 커밋되지 않는 group_vars/all/local.yml 에 둡니다.
+#      django_db_host: <RDS 엔드포인트>
+#    (우선순위: role defaults < group_vars 라서 아래 값이 덮어써집니다)
 django_db_name: pharmaflow
 django_db_user: pharmaflow_user
 django_db_host: "REPLACE-WITH-RDS-ENDPOINT"
@@ -71,12 +71,13 @@ django_media_storage: efs
 # EFS 사용 시 (django_media_storage: efs)
 #
 # ⚠️ django_db_host 와 같은 이유로 실제 DNS 이름을 여기 적지 마세요.
-#    inventory/prod.local.ini 의 [all:vars] 에 둡니다.
-#      django_efs_dns=<EFS DNS 이름>
-django_efs_dns: "REPLACE-WITH-EFS-DNS"
+#    group_vars/all/local.yml 의 efs_dns 에서 내려받습니다.
+#    (nginx role 의 nginx_efs_dns 와 같은 패턴 - efs_dns 하나만 채우면 양쪽에 적용)
+django_efs_dns: "{{ efs_dns | default('REPLACE-WITH-EFS-DNS') }}"
 
 # 직접 띄운 NFS 서버 사용 시 (django_media_storage: nfs)
-django_nfs_server: 10.23.11.30
+# 실제 IP 는 group_vars/all/local.yml 에서 덮어씁니다 (코드에 IP 고정 금지)
+django_nfs_server: "REPLACE-WITH-NFS-SERVER"
 django_nfs_export: /srv/pharmaflow/media
 
 # ── OS 패키지 ─────────────────────────────────────────────────────
