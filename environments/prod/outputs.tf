@@ -102,6 +102,11 @@ output "django_golden_ami_v2_id" {
   value       = aws_ami_from_instance.django_golden_v2.id
 }
 
+output "django_golden_ami_v3_id" {
+  description = "Django Golden AMI v3 ID"
+  value       = aws_ami_from_instance.django_golden_v3.id
+}
+
 output "nginx_golden_ami_id" {
   description = "Golden AMI ID for Nginx"
   value       = aws_ami_from_instance.nginx_golden.id

@@ -55,3 +55,22 @@ resource "aws_ami_from_instance" "nginx_golden" {
   }
 }
 
+# ---------------------------------------------------------
+# Django Golden AMI v3
+# 3-Tier DB endpoint + ASG configuration
+# ---------------------------------------------------------
+
+resource "aws_ami_from_instance" "django_golden_v3" {
+  name               = "pharmaflow-django-golden-v3"
+  source_instance_id = aws_instance.django_base.id
+
+  snapshot_without_reboot = false
+
+  tags = {
+    Name        = "pharmaflow-django-golden-v3"
+    Project     = "PharmaFlow"
+    Environment = "prod"
+    Role        = "django"
+    Version     = "v3"
+  }
+}
