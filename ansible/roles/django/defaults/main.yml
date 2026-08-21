@@ -76,7 +76,8 @@ django_media_storage: efs
 django_efs_dns: "{{ efs_dns | default('REPLACE-WITH-EFS-DNS') }}"
 
 # 직접 띄운 NFS 서버 사용 시 (django_media_storage: nfs)
-django_nfs_server: 10.23.11.30
+# 실제 IP 는 group_vars/all/local.yml 에서 덮어씁니다 (코드에 IP 고정 금지)
+django_nfs_server: "REPLACE-WITH-NFS-SERVER"
 django_nfs_export: /srv/pharmaflow/media
 
 # ── OS 패키지 ─────────────────────────────────────────────────────
