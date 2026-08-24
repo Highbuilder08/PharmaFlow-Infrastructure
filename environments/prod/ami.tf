@@ -56,6 +56,27 @@ resource "aws_ami_from_instance" "nginx_golden" {
 }
 
 # ---------------------------------------------------------
+# Nginx Golden AMI v2
+# Internal ALB backend configuration
+# ---------------------------------------------------------
+
+resource "aws_ami_from_instance" "nginx_golden_v2" {
+  name               = "pharmaflow-nginx-golden-v2"
+  source_instance_id = aws_instance.nginx.id
+
+  snapshot_without_reboot = false
+
+  tags = {
+    Name        = "pharmaflow-nginx-golden-v2"
+    Project     = "PharmaFlow"
+    Environment = "prod"
+    Role        = "nginx"
+    Version     = "v2"
+  }
+}
+
+
+# ---------------------------------------------------------
 # Django Golden AMI v3
 # 3-Tier DB endpoint + ASG configuration
 # ---------------------------------------------------------

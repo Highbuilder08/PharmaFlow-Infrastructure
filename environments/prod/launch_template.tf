@@ -53,7 +53,7 @@ resource "aws_launch_template" "django" {
 
 resource "aws_launch_template" "nginx" {
   name_prefix   = "pharmaflow-nginx-"
-  image_id      = aws_ami_from_instance.nginx_golden.id
+  image_id      = aws_ami_from_instance.nginx_golden_v2.id
   instance_type = "t3.micro"
   key_name      = var.ec2_key_name
 

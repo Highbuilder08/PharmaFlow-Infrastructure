@@ -122,6 +122,11 @@ output "nginx_golden_ami_id" {
   value       = aws_ami_from_instance.nginx_golden.id
 }
 
+output "nginx_golden_ami_v2_id" {
+  description = "Nginx Golden AMI v2 ID"
+  value       = aws_ami_from_instance.nginx_golden_v2.id
+}
+
 # ── Launch_Template ───────────────────────────────────────────────
 
 output "django_launch_template_id" {
