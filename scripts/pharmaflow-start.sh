@@ -5,108 +5,132 @@ export AWS_PAGER=""
 
 echo "=== PharmaFlow 업무 시작 ==="
 
-# 1. NAT 시작
-echo "[1/7] NAT EC2 시작"
+# ---------------------------------------------------------
+# 리소스 ID 조회
+# ---------------------------------------------------------
 
 NAT_ID=$(aws ec2 describe-instances \
-  --filters \
-    "Name=tag:Name,Values=pharmaflow-nat" \
+  --filters "Name=tag:Name,Values=pharmaflow-nat" \
   --query 'Reservations[0].Instances[0].InstanceId' \
   --output text)
-
-if [ "$NAT_ID" != "None" ] && [ -n "$NAT_ID" ]; then
-  aws ec2 start-instances \
-    --instance-ids "$NAT_ID" \
-    >/dev/null
-fi
-
-# 2. Bastion 시작
-echo "[2/7] Bastion EC2 시작"
 
 BASTION_ID=$(aws ec2 describe-instances \
-  --filters \
-    "Name=tag:Name,Values=pharmaflow-bastion" \
+  --filters "Name=tag:Name,Values=pharmaflow-bastion" \
   --query 'Reservations[0].Instances[0].InstanceId' \
   --output text)
 
-if [ "$BASTION_ID" != "None" ] && [ -n "$BASTION_ID" ]; then
+DJANGO_BASE_ID=$(aws ec2 describe-instances \
+  --filters "Name=tag:Name,Values=pharmaflow-django-base" \
+  --query 'Reservations[0].Instances[0].InstanceId' \
+  --output text)
+
+NGINX_BASE_ID=$(aws ec2 describe-instances \
+  --filters "Name=tag:Name,Values=pharmaflow-nginx" \
+  --query 'Reservations[0].Instances[0].InstanceId' \
+  --output text)
+
+EC2_IDS=""
+
+for INSTANCE_ID in \
+  "$NAT_ID" \
+  "$BASTION_ID" \
+  "$DJANGO_BASE_ID" \
+  "$NGINX_BASE_ID"
+do
+  if [ "$INSTANCE_ID" != "None" ] && [ -n "$INSTANCE_ID" ]; then
+    EC2_IDS="$EC2_IDS $INSTANCE_ID"
+  fi
+done
+
+# ---------------------------------------------------------
+# 1. 고정 EC2 / DB Tier RDS 시작 요청
+# ---------------------------------------------------------
+
+echo "[1/3] 고정 EC2 / DB Tier RDS 시작 요청"
+
+if [ -n "$EC2_IDS" ]; then
   aws ec2 start-instances \
-    --instance-ids "$BASTION_ID" \
+    --instance-ids $EC2_IDS \
     >/dev/null
 fi
 
-# 3. RDS 시작
-echo "[3/7] RDS 시작"
-
-RDS_STATUS=$(aws rds describe-db-instances \
-  --db-instance-identifier pharmaflow-db \
+DB_TIER_STATUS=$(aws rds describe-db-instances \
+  --db-instance-identifier pharmaflow-db-tier \
   --query 'DBInstances[0].DBInstanceStatus' \
   --output text)
 
-echo "현재 RDS 상태: $RDS_STATUS"
-
-if [ "$RDS_STATUS" = "stopped" ]; then
+if [ "$DB_TIER_STATUS" = "stopped" ]; then
   aws rds start-db-instance \
-    --db-instance-identifier pharmaflow-db \
+    --db-instance-identifier pharmaflow-db-tier \
     >/dev/null
 fi
 
-echo "[4/7] RDS available 대기"
+echo "고정 EC2 / DB Tier RDS 시작 요청 완료"
 
-while true; do
-  RDS_STATUS=$(aws rds describe-db-instances \
-    --db-instance-identifier pharmaflow-db \
-    --query 'DBInstances[0].DBInstanceStatus' \
-    --output text)
+# ---------------------------------------------------------
+# 2. ASG desired capacity 2 적용
+# ---------------------------------------------------------
 
-  echo "현재 RDS 상태: $RDS_STATUS"
-
-  if [ "$RDS_STATUS" = "available" ]; then
-    break
-  fi
-
-  sleep 10
-done
-
-echo "RDS 준비 완료"
-
-# 5. Django Base 시작
-echo "[5/7] Django Base EC2 시작"
-
-DJANGO_BASE_ID=$(aws ec2 describe-instances \
-  --filters \
-    "Name=tag:Name,Values=pharmaflow-django-base" \
-  --query 'Reservations[0].Instances[0].InstanceId' \
-  --output text)
-
-if [ "$DJANGO_BASE_ID" != "None" ] && [ -n "$DJANGO_BASE_ID" ]; then
-  aws ec2 start-instances \
-    --instance-ids "$DJANGO_BASE_ID" \
-    >/dev/null
-fi
-
-# 6. Nginx Base 시작
-echo "[6/7] Nginx Base EC2 시작"
-
-NGINX_ID=$(aws ec2 describe-instances \
-  --filters \
-    "Name=tag:Name,Values=pharmaflow-nginx" \
-  --query 'Reservations[0].Instances[0].InstanceId' \
-  --output text)
-
-if [ "$NGINX_ID" != "None" ] && [ -n "$NGINX_ID" ]; then
-  aws ec2 start-instances \
-    --instance-ids "$NGINX_ID" \
-    >/dev/null
-fi
-
-# 7. Django ASG 시작
-echo "[7/7] Django ASG 시작"
+echo "[2/3] Django / Nginx ASG desired capacity 2 적용"
 
 aws autoscaling update-auto-scaling-group \
   --auto-scaling-group-name pharmaflow-django-asg \
   --min-size 0 \
   --desired-capacity 2
 
-echo "=== PharmaFlow 업무 시작 요청 완료 ==="
+aws autoscaling update-auto-scaling-group \
+  --auto-scaling-group-name pharmaflow-nginx-asg \
+  --min-size 0 \
+  --desired-capacity 2
+
+echo "ASG desired capacity 2 적용 요청 완료"
+
+# ---------------------------------------------------------
+# 3. 시작 요청 반영 확인
+# ---------------------------------------------------------
+
+echo "[3/3] 시작 요청 반영 확인"
+
+while true; do
+  EC2_STARTING_OR_RUNNING=0
+
+  if [ -n "$EC2_IDS" ]; then
+    EC2_STARTING_OR_RUNNING=$(aws ec2 describe-instances \
+      --instance-ids $EC2_IDS \
+      --query 'length(Reservations[].Instances[] | [?State.Name==`pending` || State.Name==`running`])' \
+      --output text)
+  fi
+
+  DB_TIER_STATUS=$(aws rds describe-db-instances \
+    --db-instance-identifier pharmaflow-db-tier \
+    --query 'DBInstances[0].DBInstanceStatus' \
+    --output text)
+
+  DJANGO_DESIRED=$(aws autoscaling describe-auto-scaling-groups \
+    --auto-scaling-group-names pharmaflow-django-asg \
+    --query 'AutoScalingGroups[0].DesiredCapacity' \
+    --output text)
+
+  NGINX_DESIRED=$(aws autoscaling describe-auto-scaling-groups \
+    --auto-scaling-group-names pharmaflow-nginx-asg \
+    --query 'AutoScalingGroups[0].DesiredCapacity' \
+    --output text)
+
+  echo "EC2 시작 진행 수    : $EC2_STARTING_OR_RUNNING / 4"
+  echo "DB Tier RDS 상태    : $DB_TIER_STATUS"
+  echo "Django ASG desired  : $DJANGO_DESIRED"
+  echo "Nginx ASG desired   : $NGINX_DESIRED"
+
+  if [ "$EC2_STARTING_OR_RUNNING" = "4" ] && \
+     { [ "$DB_TIER_STATUS" = "starting" ] || [ "$DB_TIER_STATUS" = "available" ]; } && \
+     [ "$DJANGO_DESIRED" = "2" ] && \
+     [ "$NGINX_DESIRED" = "2" ]; then
+    break
+  fi
+
+  sleep 5
+done
+
+echo "=== PharmaFlow 시작 요청 정상 반영 완료 ==="
+echo "AWS가 백그라운드에서 최종 기동을 계속 진행합니다."
 
