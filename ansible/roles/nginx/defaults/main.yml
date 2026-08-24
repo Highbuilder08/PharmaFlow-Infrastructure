@@ -11,16 +11,13 @@ nginx_service_name: nginx
 
 
 # ── Backend ───────────────────────────────────────────────────────
-# 초기 구축:
-#   Nginx → Django Private IP:8000
+# 최종 3-Tier 구조:
+#   Nginx → Internal ALB:80 → Django ASG
 #
-# 최종 구축:
-#   Nginx → Internal ALB → Django
-#
-# Internal ALB 구축 후 nginx_backend_host 만 ALB DNS로 전환할 수 있습니다.
+# 실제 Internal ALB DNS는 group_vars/all/local.yml 에서 정의합니다.
 
-nginx_backend_host: "{{ django_private_ip }}"
-nginx_backend_port: 8000
+nginx_backend_host: "{{ internal_alb_dns }}"
+nginx_backend_port: 80
 
 
 # ── Nginx 사이트 설정 ─────────────────────────────────────────────

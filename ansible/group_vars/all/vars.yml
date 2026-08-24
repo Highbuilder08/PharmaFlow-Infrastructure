@@ -12,6 +12,7 @@ django_allowed_hosts:
 #
 # django_private_ip
 # nginx_private_ip
+# internal_alb_dns
 # efs_dns
 
 # ── DB ────────────────────────────────────────────────────────────

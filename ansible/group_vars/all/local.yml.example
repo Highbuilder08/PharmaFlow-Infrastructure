@@ -22,6 +22,9 @@ django_private_ip: 10.23.11.XXX     # ← terraform output django_base_private_i
 nginx_private_ip: 10.23.11.XXX      # ← terraform output nginx_base_private_ip
 
 # ── AWS 리소스 엔드포인트 ─────────────────────────────────────────
+# internal_alb_dns 는 Nginx가 Django ASG로 전달할 때 사용하는 Internal ALB DNS입니다.
+internal_alb_dns: "REPLACE-WITH-INTERNAL-ALB-DNS"
+
 # efs_dns 는 django/nginx role 양쪽이 공용으로 씁니다.
 efs_dns: fs-XXXXXXXXXXXXXXXXX.efs.ap-northeast-2.amazonaws.com   # ← efs_dns_name
 django_db_host: XXXX.XXXXXXXXXX.ap-northeast-2.rds.amazonaws.com # ← rds_endpoint
