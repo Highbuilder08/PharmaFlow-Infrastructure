@@ -23,3 +23,8 @@ variable "db_password" {
   type        = string
   sensitive   = true
 }
+
+variable "domain_name" {
+  description = "Primary domain name for PharmaFlow"
+  type        = string
+}

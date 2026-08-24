@@ -136,3 +136,10 @@ output "django_asg_name" {
   value       = aws_autoscaling_group.django.name
 }
 
+# ── Route53 ───────────────────────────────────────────────
+
+output "route53_name_servers" {
+  description = "Route53 authoritative name servers"
+  value       = aws_route53_zone.pharmaflow.name_servers
+}
+

@@ -36,6 +36,30 @@ resource "aws_lb_listener" "public_http" {
   protocol          = "HTTP"
 
   default_action {
+    type = "redirect"
+
+    redirect {
+      port        = "443"
+      protocol    = "HTTPS"
+      status_code = "HTTP_301"
+    }
+  }
+}
+
+# ---------------------------------------------------------
+# Public ALB HTTPS Listener
+# HTTPS :443 -> Nginx Target Group
+# ---------------------------------------------------------
+
+resource "aws_lb_listener" "public_https" {
+  load_balancer_arn = aws_lb.public.arn
+  port              = 443
+  protocol          = "HTTPS"
+
+  certificate_arn = aws_acm_certificate_validation.pharmaflow.certificate_arn
+  ssl_policy      = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+
+  default_action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.nginx.arn
   }
