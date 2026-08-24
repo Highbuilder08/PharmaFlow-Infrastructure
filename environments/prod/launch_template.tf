@@ -4,7 +4,7 @@
 
 resource "aws_launch_template" "django" {
   name_prefix   = "pharmaflow-django-"
-  image_id      = aws_ami_from_instance.django_golden_v3.id
+  image_id      = aws_ami_from_instance.django_golden_v4.id
   instance_type = "t3.small"
   key_name      = var.ec2_key_name
 

@@ -74,3 +74,23 @@ resource "aws_ami_from_instance" "django_golden_v3" {
     Version     = "v3"
   }
 }
+
+# ---------------------------------------------------------
+# Django Golden AMI v4
+# Health Check endpoints included
+# ---------------------------------------------------------
+
+resource "aws_ami_from_instance" "django_golden_v4" {
+  name               = "pharmaflow-django-golden-v4"
+  source_instance_id = aws_instance.django_base.id
+
+  snapshot_without_reboot = false
+
+  tags = {
+    Name        = "pharmaflow-django-golden-v4"
+    Project     = "PharmaFlow"
+    Environment = "prod"
+    Role        = "django"
+    Version     = "v4"
+  }
+}
