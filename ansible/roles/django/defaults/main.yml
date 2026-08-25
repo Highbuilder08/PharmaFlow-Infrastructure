@@ -26,7 +26,7 @@ django_gunicorn_workers: 3
 
 # ⚠️ 반드시 대문자입니다.
 #    이 값은 gunicorn 과 Django LOGGING 양쪽이 같이 씁니다.
-#      - gunicorn.conf.py : os.environ["LOG_LEVEL"].lower()  → 소문자로 바꿔 씀
+#      - gunicorn.conf.py : os.environ["LOG_LEVEL"].lower() → 소문자로 바꿔 씀
 #      - settings.py      : LOGGING["root"]["level"] 에 그대로 들어감
 #    파이썬 logging 은 "info" 같은 소문자를 거부합니다.
 #      ValueError: Unable to configure root logger
@@ -79,6 +79,34 @@ django_efs_dns: "{{ efs_dns | default('REPLACE-WITH-EFS-DNS') }}"
 # 실제 IP 는 group_vars/all/local.yml 에서 덮어씁니다 (코드에 IP 고정 금지)
 django_nfs_server: "REPLACE-WITH-NFS-SERVER"
 django_nfs_export: /srv/pharmaflow/media
+
+# ── static 공유 스토리지 ──────────────────────────────────────────
+# 3-Tier 구조에서는 Django와 Nginx가 서로 다른 EC2에서 실행됩니다.
+#
+# Django의 collectstatic 결과가 Django EC2 로컬에만 존재하면
+# Nginx ASG에서는 해당 파일을 볼 수 없습니다.
+#
+# 따라서 collectstatic 결과를 공용 EFS에 저장하고
+# Nginx ASG가 같은 EFS에서 정적 파일을 제공하도록 구성합니다.
+#
+# 최종 흐름:
+#
+# Django collectstatic
+#   → /srv/pharmaflow/static/staticfiles
+#   → EFS
+#
+# Nginx
+#   → 같은 EFS
+#   → /static/ 요청을 직접 제공
+django_static_storage: efs
+
+# EFS 자체를 마운트할 경로
+django_static_mount_path: "/srv/pharmaflow/static"
+
+# Django STATIC_ROOT로 사용할 실제 경로
+# Django 앱의 STATIC_ROOT 환경변수화가 완료되면
+# 이 값을 env.j2를 통해 전달합니다.
+django_static_root: "{{ django_static_mount_path }}/staticfiles"
 
 # ── OS 패키지 ─────────────────────────────────────────────────────
 # ⚠️ AMI 전제: Ubuntu 24.04 (Noble). Django 6.0 이 Python 3.12+ 를 요구합니다.

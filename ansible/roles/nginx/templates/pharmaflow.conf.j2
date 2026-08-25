@@ -8,6 +8,10 @@ server {
         alias {{ nginx_media_mount_path }}/;
     }
 
+    location /static/ {
+        alias {{ nginx_static_root }}/;
+    }
+
     location / {
         proxy_pass http://{{ nginx_backend_host }}:{{ nginx_backend_port }};
 
