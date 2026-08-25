@@ -40,13 +40,15 @@ resource "aws_lb_target_group" "django" {
     enabled             = true
     protocol            = "HTTP"
     port                = "traffic-port"
-    path                = "/"
-    matcher             = "200-399"
+    path                = "/health/live/"
+    matcher             = "200"
     interval            = 30
     timeout             = 5
     healthy_threshold   = 2
     unhealthy_threshold = 2
   }
+
+
 
   tags = {
     Name        = "pharmaflow-django-tg"
