@@ -94,7 +94,7 @@ resource "aws_db_instance" "pharmaflow_db_tier" {
   vpc_security_group_ids = [aws_security_group.rds.id]
 
   publicly_accessible = false
-  multi_az            = false
+  multi_az            = true
 
   backup_retention_period = 1
 
