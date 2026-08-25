@@ -43,6 +43,28 @@
     state: mounted
   when: nginx_media_storage == 'efs'
 
+# ── 2-1. EFS static 준비 ──────────────────────────────────────────
+
+- name: Nginx static 디렉터리 생성
+  become: true
+  file:
+    path: "{{ nginx_static_mount_path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: nginx_static_storage == 'efs'
+
+- name: EFS static 마운트
+  become: true
+  mount:
+    path: "{{ nginx_static_mount_path }}"
+    src: "{{ nginx_efs_dns }}:/"
+    fstype: nfs4
+    opts: nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport,_netdev
+    state: mounted
+  when: nginx_static_storage == 'efs'
+
 # ── 3. 사이트 설정 배포 ──────────────────────────────────────────
 - name: PharmaFlow Nginx 설정 배포
   become: true

@@ -5,20 +5,16 @@
 # 우선순위:
 # role defaults < group_vars < host_vars < -e 옵션
 
-
 # ── 서비스 ────────────────────────────────────────────────────────
 nginx_service_name: nginx
-
 
 # ── Backend ───────────────────────────────────────────────────────
 # 최종 3-Tier 구조:
 #   Nginx → Internal ALB:80 → Django ASG
 #
 # 실제 Internal ALB DNS는 group_vars/all/local.yml 에서 정의합니다.
-
 nginx_backend_host: "{{ internal_alb_dns }}"
 nginx_backend_port: 80
-
 
 # ── Nginx 사이트 설정 ─────────────────────────────────────────────
 nginx_site_name: pharmaflow
@@ -33,7 +29,6 @@ nginx_proxy_connect_timeout: "60s"
 nginx_proxy_read_timeout: "60s"
 nginx_proxy_send_timeout: "60s"
 
-
 # ── media 공유 스토리지 ───────────────────────────────────────────
 # local:
 #   Base EC2 / 초기 검증 단계
@@ -42,7 +37,6 @@ nginx_proxy_send_timeout: "60s"
 # efs:
 #   운영 구조
 #   Django와 Nginx가 동일한 EFS의 media 파일을 사용합니다.
-
 nginx_media_storage: local
 
 # group_vars/all/vars.yml 의 공용 EFS DNS를 사용합니다.
@@ -50,3 +44,25 @@ nginx_efs_dns: "{{ efs_dns }}"
 
 # Nginx에서 EFS를 마운트할 로컬 경로
 nginx_media_mount_path: "/srv/pharmaflow/media"
+
+# ── static 공유 스토리지 ──────────────────────────────────────────
+# Django collectstatic 결과를 공용 EFS에 저장하고,
+# Nginx ASG가 동일한 EFS에서 정적 파일을 직접 제공합니다.
+#
+# 최종 흐름:
+#
+# Browser
+#   → /static/...
+#   → Nginx
+#   → /srv/pharmaflow/static/staticfiles
+#   → EFS
+#
+# Django와 Nginx가 서로 다른 EC2/ASG이므로
+# Django 로컬 staticfiles 디렉터리를 직접 사용할 수 없습니다.
+nginx_static_storage: efs
+
+# EFS 자체를 마운트할 경로
+nginx_static_mount_path: "/srv/pharmaflow/static"
+
+# Nginx location /static/ 의 alias 대상
+nginx_static_root: "{{ nginx_static_mount_path }}/staticfiles"

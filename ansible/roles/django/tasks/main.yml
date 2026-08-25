@@ -193,6 +193,43 @@
   when: django_media_storage in ['efs', 'nfs']
   tags: [storage]
 
+# ── 8-1. static 공유 스토리지 마운트 ──────────────────────────────
+# Django collectstatic 결과를 EFS에 저장하여
+# Nginx ASG가 동일한 정적 파일을 제공하도록 합니다.
+
+- name: Django static 마운트 경로 생성
+  become: true
+  file:
+    path: "{{ django_static_mount_path }}"
+    state: directory
+    owner: "{{ django_user }}"
+    group: "{{ django_user }}"
+    mode: "0755"
+  when: django_static_storage == 'efs'
+  tags: [storage]
+
+- name: Django static EFS 마운트
+  become: true
+  mount:
+    path: "{{ django_static_mount_path }}"
+    src: "{{ django_efs_dns }}:/"
+    fstype: nfs4
+    opts: nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport,_netdev
+    state: mounted
+  when: django_static_storage == 'efs'
+  tags: [storage]
+
+- name: EFS staticfiles 디렉터리 생성
+  become: true
+  file:
+    path: "{{ django_static_root }}"
+    state: directory
+    owner: "{{ django_user }}"
+    group: "{{ django_user }}"
+    mode: "0755"
+  when: django_static_storage == 'efs'
+  tags: [storage]
+
 # ── 9. Django 관리 명령 ───────────────────────────────────────────
 # 운영매뉴얼 8장의 migrate / collectstatic 절차
 #
@@ -217,6 +254,7 @@
     DB_HOST: "{{ django_db_host }}"
     DB_PORT: "{{ django_db_port }}"
     LOG_LEVEL: "{{ django_log_level }}"
+    STATIC_ROOT: "{{ django_static_root }}"
   tags: [db]
   block:
     - name: DB 엔드포인트가 아직 플레이스홀더인지 확인
