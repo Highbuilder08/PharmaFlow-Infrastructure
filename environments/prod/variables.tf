@@ -28,3 +28,9 @@ variable "domain_name" {
   description = "Primary domain name for PharmaFlow"
   type        = string
 }
+
+variable "alert_email" {
+  description = "Email address for CloudWatch alarm notifications"
+  type        = string
+  sensitive   = true
+}
