@@ -239,33 +239,62 @@ ansible-inventory --host django-01         # 변수가 실제로 로드되는지
    Django `LOGGING` 은 그대로 파이썬 로깅 레벨로 넘깁니다.
    소문자 `info` 를 넣으면 `ValueError: Unable to configure root logger` 로 앱이 아예 안 뜹니다.
 
-## 구축 단계 (Nginx 연동)
+## 현재 3-Tier Nginx 연동 구조
+
+기존의 Nginx → Django Base EC2 직접 연결 구조는 종료되었으며,
+현재는 Nginx와 Django 모두 Auto Scaling Group 기반의 3-Tier 구조를 사용합니다.
+
+현재 서비스 요청 흐름은 다음과 같습니다.
 
 ```
-[초기 구축 단계 - 종료됨]           [최종 구축 단계 - 현재]
-
-Nginx                              Nginx (ASG 예정)
-  ↓ 사설 IP:8000 직결                ↓
-Django Base EC2                    Internal ALB (pharmaflow-internal-alb)
-                                     ↓
-                                   Django ASG (min 0 / desired 2 / max 4)
+Internet
+  ↓
+Public ALB
+  ↓
+Nginx ASG (Web Private A/C)
+  ↓
+Internal ALB :80
+  ↓
+Django ASG :8000
 ```
 
-Internal ALB·Django ASG 가 구축되어 **최종 단계 구성이 현재 상태**입니다.
-초기 단계의 잔재 2개가 남아 있으며, 정리 시점이 됐습니다:
+Nginx는 더 이상 Django Base EC2의 사설 IP를 직접 참조하지 않습니다.
 
-- **팀원3**: `nginx_backend_host` 가 아직 `django_private_ip`(Base EC2 고정 IP)입니다.
-  Internal ALB DNS 로 전환해야 ASG 인스턴스로 분산됩니다. ALB DNS 는 커밋 금지이므로
-  `local.yml` 에 변수로 넣는 방식을 권장합니다 (예: `internal_alb_dns`)
-- **팀장**: `environments/prod/django.tf` 의 Nginx SG → Django 8000
-  **임시 규칙(`django_app_from_nginx_temp`)이 아직 남아 있습니다.**
-  "Internal ALB 생성 후 삭제" 조건이 충족됐으므로 삭제 대상입니다
+Nginx role의 backend 설정은 다음과 같습니다.
 
-여전히 유효한 전제:
+```yaml
+nginx_backend_host: "{{ internal_alb_dns }}"
+nginx_backend_port: 80
+```
 
-- 이 role 은 Gunicorn 을 `0.0.0.0:8000` 에 바인딩합니다
-  (앱 저장소 `gunicorn.conf.py` 기본값 `127.0.0.1:8000` 으로는 외부 접근 불가)
-- Django SG 8000 인바운드는 **Internal ALB SG에서만** 허용
+실제 Internal ALB DNS 값은 Public Git 저장소에 커밋하지 않고
+`group_vars/all/local.yml`에서 환경별로 관리합니다.
+
+`group_vars/all/local.yml.example`에는 실제 DNS 대신 placeholder만 유지합니다.
+
+```yaml
+internal_alb_dns: "REPLACE-WITH-INTERNAL-ALB-DNS"
+```
+
+Nginx 설정 템플릿은 변수 기반 구조를 유지합니다.
+
+```nginx
+proxy_pass http://{{ nginx_backend_host }}:{{ nginx_backend_port }};
+```
+
+따라서 Nginx에서 Django까지의 요청 흐름은 다음과 같습니다.
+
+```text
+Nginx ASG
+  ↓ HTTP :80
+Internal ALB
+  ↓ HTTP :8000
+Django ASG
+```
+
+Django ASG의 Gunicorn은 `0.0.0.0:8000`에 바인딩되며,
+Django Security Group의 8000 포트는 Internal ALB Security Group에서만
+접근할 수 있도록 제한합니다.
 
 ## Golden AMI 파이프라인 — role 을 고치면 여기까지 해야 반영됩니다
 
@@ -335,6 +364,149 @@ aws elbv2 describe-target-health \
 | **ALB Health Check 경로** | ~~미확정~~ → **해소.** `internal_alb.tf` 가 `path=/`, `matcher=200-399` 로 302 리다이렉트를 정상으로 판정합니다. 앱에 `/health` 뷰가 생기면 `path=/health`, `matcher=200` 으로 좁히는 게 더 정확합니다 (선택) |
 | **ASG 확장 시 ALLOWED_HOSTS** | ~~미확정~~ → **해소(트레이드오프).** `django_allowed_hosts: ["*"]` 채택. ALB 헬스체크가 Host 헤더에 매번 바뀌는 인스턴스 IP를 넣기 때문입니다. Host 헤더 검증을 포기하는 대신 Private Subnet + SG(Internal ALB→8000만 허용)로 접근 자체를 격리합니다. 앱에 `/health` 뷰가 생기면 목록 방식으로 되돌릴 수 있습니다 |
 | **Static → S3 + CloudFront** | **불가.** 앱의 `requirements.txt` 에 `django-storages`, `boto3` 가 없습니다. 앱 코드 변경이 선행되어야 하며 Ansible로 해결되지 않습니다. 현재 role 은 로컬 `collectstatic` 만 수행합니다 |
+
+## Nginx ASG 장애 / 복구 테스트 절차
+
+Nginx ASG 장애 발생 시 서비스 지속 및 Auto Scaling 자동 복구 여부를
+검증하기 위한 절차입니다.
+
+> 이 절차는 실제 장애/복구 검증 시 사용하기 위한 문서입니다.
+> README 현행화 작업에서는 실제 인스턴스 종료, ASG 조작 또는
+> `terraform apply`를 수행하지 않습니다.
+
+### 1. Nginx ASG 정상 상태 확인
+
+Nginx ASG에서 실행 중인 인스턴스와 Availability Zone을 확인합니다.
+
+```bash
+aws ec2 describe-instances \
+  --filters "Name=tag:Name,Values=pharmaflow-nginx-asg" \
+            "Name=instance-state-name,Values=running" \
+  --query "Reservations[].Instances[].[InstanceId,State.Name,Placement.AvailabilityZone]" \
+  --output table
+```
+
+기대 결과:
+
+- 실행 중인 Nginx 인스턴스 2대
+- `ap-northeast-2a` / `ap-northeast-2c`에 분산 배치
+
+### 2. Nginx Target Group 상태 확인
+
+```bash
+aws elbv2 describe-target-health \
+  --target-group-arn $(aws elbv2 describe-target-groups \
+      --names pharmaflow-nginx-tg \
+      --query 'TargetGroups[0].TargetGroupArn' \
+      --output text) \
+  --query 'TargetHealthDescriptions[].[Target.Id,TargetHealth.State]' \
+  --output table
+```
+
+기대 결과:
+
+- Nginx 인스턴스 2대 모두 `healthy`
+- Target Group `2/2 healthy`
+
+### 3. 장애 발생 전 외부 서비스 확인
+
+```bash
+curl -I https://pharmaflow.homes
+```
+
+기대 결과:
+
+- HTTPS 요청 정상 응답
+- 현재 확인 기준 `HTTP/2 200`
+
+### 4. Nginx 인스턴스 1대 장애 테스트
+
+검증 담당자가 Nginx ASG 인스턴스 중 1대를 종료하여 장애 상황을 발생시킵니다.
+
+장애 발생 직후에도 외부 서비스가 계속 응답하는지 확인합니다.
+
+```bash
+curl -I https://pharmaflow.homes
+```
+
+기대 결과:
+
+- 남아 있는 정상 Nginx 인스턴스를 통해 서비스 지속
+- HTTPS 요청 정상 응답
+
+### 5. ASG 신규 인스턴스 자동 생성 확인
+
+Nginx ASG가 `desired_capacity = 2`를 유지하기 위해
+신규 인스턴스를 자동 생성하는지 확인합니다.
+
+```bash
+aws ec2 describe-instances \
+  --filters "Name=tag:Name,Values=pharmaflow-nginx-asg" \
+            "Name=instance-state-name,Values=pending,running" \
+  --query "Reservations[].Instances[].[InstanceId,State.Name,Placement.AvailabilityZone]" \
+  --output table
+```
+
+기대 결과:
+
+- 장애 인스턴스를 대체할 신규 인스턴스 자동 생성
+- 최종적으로 실행 중인 Nginx 인스턴스 2대 복구
+
+### 6. 신규 인스턴스 Target Group 등록 확인
+
+```bash
+aws elbv2 describe-target-health \
+  --target-group-arn $(aws elbv2 describe-target-groups \
+      --names pharmaflow-nginx-tg \
+      --query 'TargetGroups[0].TargetGroupArn' \
+      --output text) \
+  --query 'TargetHealthDescriptions[].[Target.Id,TargetHealth.State]' \
+  --output table
+```
+
+신규 인스턴스의 Target Health 상태가 다음과 같이 변경되는지 확인합니다.
+
+```text
+initial
+  ↓
+healthy
+```
+
+최종적으로 Target Group이 다시 `2/2 healthy` 상태가 되어야 합니다.
+
+### 7. Multi-AZ 분산 상태 확인
+
+```bash
+aws ec2 describe-instances \
+  --filters "Name=tag:Name,Values=pharmaflow-nginx-asg" \
+            "Name=instance-state-name,Values=running" \
+  --query "Reservations[].Instances[].[InstanceId,Placement.AvailabilityZone]" \
+  --output table
+```
+
+기대 결과:
+
+- `ap-northeast-2a`
+- `ap-northeast-2c`
+
+두 Availability Zone에 Nginx 인스턴스가 정상 분산되어 있어야 합니다.
+
+### 8. 장애 복구 후 최종 서비스 확인
+
+```bash
+curl -I https://pharmaflow.homes
+```
+
+최종 확인 항목:
+
+- 외부 HTTPS 요청 정상 응답
+- Nginx ASG 인스턴스 2대 정상
+- Nginx Target Group `2/2 healthy`
+- Web Private A/C Multi-AZ 분산 정상
+- 신규 인스턴스가 Target Group에서 `healthy` 상태
+
+장애/복구 테스트 완료 후 서비스와 ASG/Target Group이
+초기 정상 상태로 복구되었는지 최종 확인합니다.
 
 ## 주의
 
