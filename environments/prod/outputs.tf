@@ -174,3 +174,20 @@ output "wireguard_private_ip" {
   description = "Private IP address of the WireGuard VPN gateway"
   value       = aws_instance.wireguard.private_ip
 }
+
+# ── Amazon SES ────────────────────────────────────────────
+
+output "ses_domain_identity" {
+  description = "Amazon SES verified domain identity"
+  value       = aws_sesv2_email_identity.pharmaflow.email_identity
+}
+
+output "ses_verification_status" {
+  description = "Amazon SES domain verification status"
+  value       = aws_sesv2_email_identity.pharmaflow.verification_status
+}
+
+output "ses_dkim_status" {
+  description = "Amazon SES DKIM status"
+  value       = aws_sesv2_email_identity.pharmaflow.dkim_signing_attributes[0].status
+}
