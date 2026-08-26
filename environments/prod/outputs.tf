@@ -163,3 +163,14 @@ output "route53_name_servers" {
   value       = aws_route53_zone.pharmaflow.name_servers
 }
 
+# ── WireGuard Hybrid VPN ──────────────────────────────────
+
+output "wireguard_public_ip" {
+  description = "Elastic IP address of the WireGuard VPN gateway"
+  value       = aws_eip.wireguard.public_ip
+}
+
+output "wireguard_private_ip" {
+  description = "Private IP address of the WireGuard VPN gateway"
+  value       = aws_instance.wireguard.private_ip
+}

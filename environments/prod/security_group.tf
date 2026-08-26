@@ -129,6 +129,17 @@ resource "aws_vpc_security_group_ingress_rule" "nginx_http" {
   to_port     = 80
 }
 
+# Hybrid On-Premise → Nginx HTTP
+resource "aws_vpc_security_group_ingress_rule" "nginx_http_from_onprem" {
+  security_group_id = aws_security_group.nginx.id
+
+  cidr_ipv4   = "192.168.32.0/24"
+  from_port   = 80
+  ip_protocol = "tcp"
+  to_port     = 80
+}
+
+
 resource "aws_vpc_security_group_ingress_rule" "nginx_ssh" {
   security_group_id            = aws_security_group.nginx.id
   referenced_security_group_id = aws_security_group.bastion.id
