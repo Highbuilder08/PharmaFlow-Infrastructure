@@ -22,7 +22,7 @@ Django Base EC2 1대                 Django ASG 2대 (App Private A/C, Multi-AZ)
 | 기존 문제 | Django 1대(Base EC2). 인스턴스 장애 = 서비스 중단(단일 장애 지점). AZ 장애에도 무방비. 이용량 변화에 수동 대응 |
 | 개선 방법 | 같은 상태의 인스턴스를 여러 AZ에 복수 배치하고, 장애 시 자동 교체·부하 시 확장 가능한 구조로 전환 |
 | 적용 기술 | ASG `min 0 / desired 2 / max 4`, `vpc_zone_identifier` = App 전용 Private A/C(2a·2c). Internal ALB Target Group에 자동 등록. `health_check_type=ELB`, grace 180s |
-| 검증 결과 | Django TG 2/2 healthy, 인스턴스가 2a·2c에 분산 배치됨을 확인. Rolling Instance Refresh로 무중단 교체 동작. **인스턴스 강제 종료 시 자동 복구는 오늘(8/26) 통합 장애시험에서 기록** |
+| 검증 결과 | Django TG 2/2 healthy, 인스턴스가 2a·2c에 분산 배치됨을 확인. Rolling Instance Refresh로 무중단 교체 동작. **인스턴스 강제 종료 → 자동 복구는 2026-08-26 실제 장애시험으로 실측 완료** (아래 "통합 장애시험 기록" 시험 1) |
 
 ## 2. Golden AMI
 
@@ -93,12 +93,23 @@ Django Base EC2 1대                 Django ASG 2대 (App Private A/C, Multi-AZ)
 
 | 관측 항목 | 기대 | 실측 결과 (2026-08-26) |
 |---|---|---|
-| 외부 서비스 응답 | 무중단 (1대 잔존) | 장애 발생 중에도 **HTTP 200 유지** |
-| `/health/live/` · `/health/ready/` | 200 유지 | 둘 다 **HTTP 200 유지** |
+| 외부 서비스 응답 | 1대 잔존으로 응답 지속 | 이번 장애시험 동안 외부 메인 서비스에서 **HTTP 200 이 유지되는 것을 관측** |
+| `/health/live/` · `/health/ready/` | 200 유지 | 둘 다 **HTTP 200 유지 관측** |
 | 트래픽 처리 | 정상 인스턴스로 우회 | Internal ALB 가 잔존 정상 인스턴스로 트래픽 처리 |
-| ASG 자동 복구 | 대체 인스턴스 자동 생성 | 신규 인스턴스 자동 생성 — **Golden AMI v5 기반**, `ap-northeast-2a` 에 생성되어 **2a / 2c Multi-AZ 구조 자동 복원** |
+| ASG 자동 복구 | 대체 인스턴스 자동 생성 | 신규 인스턴스 자동 생성 — **Golden AMI v5 기반**, `ap-northeast-2a` 에 생성되어 기존 `ap-northeast-2c` 인스턴스와 함께 **2a / 2c Multi-AZ 구조 자동 복구** |
 | TG 최종 상태 | 2/2 healthy | **2/2 healthy** |
-| 장애 감지 → 복귀 | CloudWatch 상태 전환 | `pharmaflow-django-tg-healthy-hosts` : `10:37:48` OK → ALARM, `10:38:48` ALARM → OK — **감지부터 정상 복귀까지 전 구간 상태 전환 확인** |
+| CloudWatch 장애 감지 | HealthyHostCount 기반 상태 전환 | Alarm `pharmaflow-django-tg-healthy-hosts` — 정상 HealthyHostCount 2 → 장애 후 **1** (60초 주기 2회 연속 관측 시 알람). `2026-08-26 10:37:48 KST` OK → ALARM, `10:38:48 KST` ALARM → OK — **감지부터 정상 복귀까지 전 구간 상태 전환 확인** |
+| SNS 이메일 알림 | 장애·복구 시 알림 발송 | Alarm 에 연결된 SNS Topic 경유로 **ALARM 이메일 실제 수신**, ASG 자동복구·HealthyHostCount=2 회복 후 **OK 복구 이메일 실제 수신** |
+
+**End-to-End 검증 흐름 — 아래 전체가 실제 환경에서 이어지는 것을 확인했다:**
+
+```
+Django 인스턴스 장애
+  → Internal ALB 트래픽 우회        → 서비스 HTTP 200 유지
+  → CloudWatch 장애 감지 (OK → ALARM) → SNS 장애 이메일 수신
+  → ASG Golden AMI v5 기반 자동복구   → Target Group 2/2 healthy
+  → CloudWatch ALARM → OK           → SNS 복구 이메일 수신
+```
 
 문제 발견: 없음 — Django 앱/role 수정 PR 불필요.
 
