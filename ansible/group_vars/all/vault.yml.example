@@ -22,3 +22,9 @@
 
 django_db_password: "여기에-DB-비밀번호"
 django_hira_service_key: "여기에-HIRA-API-키"
+
+# SES SMTP 자격증명 (IAM 액세스 키가 아니라 SES 콘솔에서 발급하는 별도 값)
+# 아직 미발급이면 이 두 줄은 비워두거나 생략해도 됩니다
+# (env.j2 가 default('') 처리하므로 배포는 실패하지 않고, 메일 기능만 비활성)
+django_email_host_user: "여기에-SES-SMTP-사용자명"
+django_email_host_password: "여기에-SES-SMTP-비밀번호"
