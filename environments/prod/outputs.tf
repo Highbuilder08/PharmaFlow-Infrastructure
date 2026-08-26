@@ -117,6 +117,11 @@ output "django_golden_ami_v4_id" {
   value       = aws_ami_from_instance.django_golden_v4.id
 }
 
+output "django_golden_ami_v5_id" {
+  description = "Django Golden AMI v5 ID"
+  value       = aws_ami_from_instance.django_golden_v5.id
+}
+
 output "nginx_golden_ami_id" {
   description = "Golden AMI ID for Nginx"
   value       = aws_ami_from_instance.nginx_golden.id
@@ -125,6 +130,11 @@ output "nginx_golden_ami_id" {
 output "nginx_golden_ami_v2_id" {
   description = "Nginx Golden AMI v2 ID"
   value       = aws_ami_from_instance.nginx_golden_v2.id
+}
+
+output "nginx_golden_ami_v3_id" {
+  description = "Nginx Golden AMI v3 ID"
+  value       = aws_ami_from_instance.nginx_golden_v3.id
 }
 
 # ── Launch_Template ───────────────────────────────────────────────
