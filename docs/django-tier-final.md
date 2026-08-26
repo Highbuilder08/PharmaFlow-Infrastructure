@@ -9,7 +9,7 @@
 [기존]                              [현재]
 Django Base EC2 1대                 Django ASG 2대 (App Private A/C, Multi-AZ)
 고정 사설 IP 의존                    Internal ALB 경유 (IP 무관)
-수동 설치·설정                       Golden AMI v5 + Launch Template
+수동 설치·설정                       Golden AMI v6 + Launch Template
 "/" 단일 헬스체크 (DB 혼재)          /health/live/ + /health/ready/ 분리
 설정 하드코딩 (Gmail, static 경로)   전부 환경변수 (.env) 주입
 로컬 staticfiles                    EFS 공유 + Nginx 직접 서빙
@@ -30,8 +30,8 @@ Django Base EC2 1대                 Django ASG 2대 (App Private A/C, Multi-AZ)
 |---|---|
 | 기존 문제 | 서버를 늘릴 때마다 수동 설치 반복 → 서버별 설정 편차(snowflake). Base EC2를 손으로 고치면 ASG 인스턴스에는 반영되지 않거나, 반대로 코드에 없는 상태가 AMI로 전체 복제됨 |
 | 개선 방법 | "서버를 고치지 않고 이미지를 교체한다" — 수정은 Ansible 코드로만, 반영은 이미지 재베이크로만 하는 불변(immutable) 파이프라인 |
-| 적용 기술 | Base EC2 → Ansible 적용 → 검증 → `aws_ami_from_instance`(버전 유지: v1~v5) → Launch Template `image_id` 갱신 → ASG Rolling Instance Refresh. 현재 Django Golden AMI **v5**(Shared Static 반영), Launch Template **Version 5**가 v5 AMI 참조 |
-| 검증 결과 | v1(초기) → v2(ALLOWED_HOSTS 코드 회수) → v3 → v4(liveness/readiness) → v5(Shared Static, 2026-08-26) 이력으로 "코드 수정 → 재베이크 → 전체 반영" 사이클 반복 검증. 이전 버전 AMI가 남아 있어 롤백 가능 |
+| 적용 기술 | Base EC2 → Ansible 적용 → 검증 → `aws_ami_from_instance`(버전 유지: v1~v6) → Launch Template `image_id` 갱신 → ASG Rolling Instance Refresh. 현재 Django Golden AMI **v6**(SES 설정 포함), Launch Template **Version 6**가 v6 AMI 참조, 운영 ASG 2대 모두 v6 |
+| 검증 결과 | v1(초기) → v2(ALLOWED_HOSTS 코드 회수) → v3 → v4(liveness/readiness) → v5(Shared Static) → v6(SES 설정, Rolling Refresh Successful 100%) 이력으로 "코드 수정 → 재베이크 → 전체 반영" 사이클 반복 검증. 이전 버전 AMI가 남아 있어 롤백 가능 |
 
 ## 3. /health/live/ · /health/ready/ 분리 이유
 
@@ -76,11 +76,21 @@ Django Base EC2 1대                 Django ASG 2대 (App Private A/C, Multi-AZ)
 | 기존 문제 | 이메일 발송이 개인 Gmail 계정(앱 비밀번호) 기반의 테스트 구성이었다. `@pharmaflow.homes` 도메인 발신 주소를 쓸 수 없고, 개인 계정 의존·발송 한도·스팸 분류 위험이 있어 운영 구성이 아니었다 |
 | 개선 방법 | 도메인 소유 증명 기반의 관리형 발송 서비스(**Amazon SES**)로 전환하고, 발신 주소를 `noreply@pharmaflow.homes` 전용으로 통일 |
 | 적용 기술 | SES **서울(ap-northeast-2) 리전 SMTP**. 앱의 `EMAIL_*` 환경변수 → Ansible `env.j2` → EC2 `.env` 주입 구조(6번, 인프라 PR #38)라 **앱 코드 수정 0**. 도메인 인증: `pharmaflow.homes` **SES Domain Identity 검증 성공**, **DKIM SUCCESS**, **Custom MAIL FROM `mail.pharmaflow.homes` SUCCESS**, **SPF 설정**, **DMARC `p=none` 설정** |
-| 검증 결과 | SES Sandbox 에서 검증된 외부 수신자를 대상으로 **실제 발송 시험** — Django `send_mail()` 반환값 **1**(발송 성공), **실제 외부 메일함에서 `noreply@pharmaflow.homes` 발신 메일 수신 확인** |
+| 검증 결과 | ①**Base EC2 시험**: SES Sandbox 에서 검증된 외부 수신자를 대상으로 실제 발송 — Django `send_mail()` 반환값 **1**(발송 성공), 실제 외부 메일함에서 `noreply@pharmaflow.homes` 발신 메일 수신 확인 ②**운영 ASG 재검증**: 운영 ASG 인스턴스에서 **SES SMTP TCP 587 연결 성공**, 운영 Django 에서 `send_mail()` = **1**, `noreply@pharmaflow.homes` **실제 외부 메일 수신 성공** |
 
-**반영 상태 (구분 필요)**: SES 설정이 포함된 **Golden AMI v6 → Launch Template v6 → ASG
-Rolling Refresh 는 현재 인프라 담당이 진행 중**이다. 최종 성공 여부는 인프라 담당 확인 후
-이 문단을 업데이트한다.
+**반영 상태 — 운영 반영 완료**: SES 설정이 포함된 **Golden AMI v6** → **Launch Template
+Version 6** → **ASG Rolling Refresh Successful 100%**. 운영 Django ASG **2대 모두 Golden
+AMI v6** 기반이며 Target Group **2/2 healthy**. (SES 는 여전히 **Sandbox 상태** — 검증된
+수신자에게만 발송 가능하며, Production Access 전환은 향후 과제)
+
+### Troubleshooting — App Tier 에서 SES SMTP 연결 timeout
+
+| | |
+|---|---|
+| 증상 | App Tier(`10.23.31/32`) 인스턴스에서 SES SMTP TCP 587 연결이 **timeout** |
+| 원인 | App Private Route → NAT 경로 자체는 있었지만, **NAT SG 가 기존 Private CIDR(`10.23.11/12`)만 허용**하고 있어 새 App 전용 서브넷 대역의 아웃바운드가 차단됨 |
+| 해결 | NAT SG 에 App Private CIDR 추가 → TCP 587 연결 및 실제 SES 발송 성공 |
+| 교훈 | 서브넷을 새로 만들면 라우팅 테이블만이 아니라 **경로상 모든 SG 의 소스 CIDR 허용 목록**도 함께 점검해야 한다. "경로는 있는데 timeout" 패턴은 중간 SG 부터 의심 |
 
 ### 보안 — SMTP Credential 취급
 
