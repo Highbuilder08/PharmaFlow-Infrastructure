@@ -61,7 +61,7 @@ cd ansible
 
 # 1) 비밀값 파일 생성
 cp group_vars/all/vault.yml.example group_vars/all/vault.yml
-vi group_vars/all/vault.yml                    # DB 비밀번호, HIRA 키 입력
+vi group_vars/all/vault.yml                    # DB 비밀번호, HIRA 키, (SES 발급 후) SMTP 자격증명
 ansible-vault encrypt group_vars/all/vault.yml # 암호화
 
 # 2) EC2 접속 키 배치 (팀장님께 pharmaflow-infra-key.pem 을 안전한 경로로 받으세요)

@@ -122,3 +122,24 @@ django_apt_packages:
   - libmysqlclient-dev
   - git
   - nfs-common
+
+# ── Email (SES SMTP 예정) ─────────────────────────────────────────
+# 앱의 EMAIL_* 설정(앱 PR #80)은 전부 환경변수 주입이므로, 여기 값만 채우면
+# 코드 수정 없이 어떤 SMTP 서비스로든 전환됩니다.
+#
+# SMTP 자격증명(사용자/비밀번호)은 여기 두지 않습니다.
+#   → group_vars/all/vault.yml 의 django_email_host_user / django_email_host_password
+#   (SES SMTP credential 은 IAM 액세스 키와 다른 별도 발급값입니다)
+django_email_backend: django.core.mail.backends.smtp.EmailBackend
+
+# SES 리전 공용 SMTP 엔드포인트 (계정 무관 공개 주소라 커밋해도 안전).
+# 다른 서비스로 바뀌면 local.yml 에서 django_email_host 를 덮어씁니다.
+django_email_host: email-smtp.ap-northeast-2.amazonaws.com
+django_email_port: 587
+django_email_use_tls: "True"
+django_email_use_ssl: "False"
+
+# 발신 주소. @pharmaflow.homes 는 SES 도메인 검증(SPF/DKIM) 후에 유효합니다.
+# ⚠️ .env 는 systemd EnvironmentFile 로 읽히므로 공백 있는
+#    "PharmaFlow <noreply@...>" 형식 대신 주소만 씁니다.
+django_email_from: noreply@pharmaflow.homes
