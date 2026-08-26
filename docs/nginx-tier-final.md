@@ -426,3 +426,13 @@ Django ASG
 * SNS ALARM/OK 이메일 별도 검증
 
 이를 통해 PharmaFlow의 Nginx Web Tier가 특정 EC2 인스턴스의 IP나 로컬 파일에 의존하지 않고, 장애 상황에서도 서비스 지속과 자동복구가 가능한 구조로 개선되었음을 확인하였다.
+
+
+## 발표 예상 질문
+- 왜 Nginx 앞에 ALB가 필요한가?
+- 왜 Nginx 뒤에 Internal ALB가 또 필요한가?
+- 왜 Nginx도 ASG로 구성했는가?
+- 왜 Static을 EFS에 저장했는가?
+- Nginx 1대 장애 시 서비스가 어떻게 유지되는가?
+- Golden AMI와 Launch Template의 역할 차이는?
+- 장애가 발생했는데 CloudWatch ALARM이 항상 발생하지 않을 수도 있는 이유는?
