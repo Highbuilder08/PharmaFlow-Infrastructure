@@ -136,3 +136,19 @@ resource "aws_route_table_association" "db_private_c" {
   subnet_id      = aws_subnet.db_private_c.id
   route_table_id = aws_route_table.db_private.id
 }
+
+# ---------------------------------------------------------
+# Hybrid WireGuard Routes
+# ---------------------------------------------------------
+
+resource "aws_route" "web_private_onprem" {
+  route_table_id         = aws_route_table.web_private.id
+  destination_cidr_block = "192.168.32.0/24"
+  network_interface_id   = aws_instance.wireguard.primary_network_interface_id
+}
+
+resource "aws_route" "app_private_onprem" {
+  route_table_id         = aws_route_table.app_private.id
+  destination_cidr_block = "192.168.32.0/24"
+  network_interface_id   = aws_instance.wireguard.primary_network_interface_id
+}
