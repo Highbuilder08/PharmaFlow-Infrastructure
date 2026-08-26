@@ -137,6 +137,26 @@ resource "aws_ami_from_instance" "django_golden_v5" {
 }
 
 # ---------------------------------------------------------
+# Django Golden AMI v6
+# Amazon SES SMTP configuration included
+# ---------------------------------------------------------
+
+resource "aws_ami_from_instance" "django_golden_v6" {
+  name               = "pharmaflow-django-golden-v6"
+  source_instance_id = aws_instance.django_base.id
+
+  snapshot_without_reboot = false
+
+  tags = {
+    Name        = "pharmaflow-django-golden-v6"
+    Project     = "PharmaFlow"
+    Environment = "prod"
+    Role        = "django"
+    Version     = "v6"
+  }
+}
+
+# ---------------------------------------------------------
 # Nginx Golden AMI v3
 # Shared Static EFS + /static/ configuration
 # ---------------------------------------------------------
