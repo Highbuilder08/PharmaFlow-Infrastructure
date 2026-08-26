@@ -363,7 +363,7 @@ aws elbv2 describe-target-health \
 | **RDS 엔드포인트 / EFS DNS** | ~~미확정~~ → **생성 완료.** Public 저장소라 실제 값은 커밋하지 않고 `group_vars/all/local.yml` 로 주입합니다 (위 "실행 시나리오 ②"). `defaults/main.yml` 의 플레이스홀더는 의도된 것이니 교체하지 마세요 |
 | **ALB Health Check 경로** | ~~미확정~~ → **해소.** `internal_alb.tf` 가 `path=/`, `matcher=200-399` 로 302 리다이렉트를 정상으로 판정합니다. 앱에 `/health` 뷰가 생기면 `path=/health`, `matcher=200` 으로 좁히는 게 더 정확합니다 (선택) |
 | **ASG 확장 시 ALLOWED_HOSTS** | ~~미확정~~ → **해소(트레이드오프).** `django_allowed_hosts: ["*"]` 채택. ALB 헬스체크가 Host 헤더에 매번 바뀌는 인스턴스 IP를 넣기 때문입니다. Host 헤더 검증을 포기하는 대신 Private Subnet + SG(Internal ALB→8000만 허용)로 접근 자체를 격리합니다. 앱에 `/health` 뷰가 생기면 목록 방식으로 되돌릴 수 있습니다 |
-| **Static → S3 + CloudFront** | **불가.** 앱의 `requirements.txt` 에 `django-storages`, `boto3` 가 없습니다. 앱 코드 변경이 선행되어야 하며 Ansible로 해결되지 않습니다. 현재 role 은 로컬 `collectstatic` 만 수행합니다 |
+| **Static 파일 공유 구조** | **구현 완료.** Django `collectstatic` 결과를 공용 EFS의 `/srv/pharmaflow/static/staticfiles`에 저장하고, Nginx ASG가 동일한 EFS를 마운트하여 `/static/` 요청을 직접 제공합니다. Django와 Nginx가 서로 다른 ASG 인스턴스로 동작하므로 로컬 staticfiles 디렉터리를 공유할 수 없는 문제를 EFS로 해결했습니다. S3 + CloudFront 방식은 현재 사용하지 않습니다. |
 
 ## Nginx ASG 장애 / 복구 테스트 절차
 
