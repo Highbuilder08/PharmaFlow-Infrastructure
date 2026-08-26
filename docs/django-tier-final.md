@@ -69,6 +69,53 @@ Django Base EC2 1대                 Django ASG 2대 (App Private A/C, Multi-AZ)
 | 적용 기술 | 앱 PR #80: `EMAIL_HOST` 기본값 중립화(`localhost`), `EMAIL_BACKEND/HOST/PORT/USE_TLS/USE_SSL/HOST_USER/HOST_PASSWORD/DEFAULT_FROM_EMAIL` 전부 env 주입, `.env.example`에 Gmail/SES 예시 병기. 자격증명은 Git 제외. 사용처 2곳(회원가입 인증번호, 비밀번호 재설정)은 실패 시 로깅+사용자 안내 처리 |
 | 검증 결과 | 발송 테스트 3건(인증번호/재설정/발신자 주소가 설정을 따르는지) 통과. `DEFAULT_FROM_EMAIL`의 `noreply@pharmaflow.homes` 전환은 메일 인프라 문서(PR #31)의 SPF/DKIM 적용 이후 — 그 전 사용 시 스팸 처리 위험을 명시 |
 
+## 6-1. Amazon SES 전환 — noreply@pharmaflow.homes 실발송
+
+| | |
+|---|---|
+| 기존 문제 | 이메일 발송이 개인 Gmail 계정(앱 비밀번호) 기반의 테스트 구성이었다. `@pharmaflow.homes` 도메인 발신 주소를 쓸 수 없고, 개인 계정 의존·발송 한도·스팸 분류 위험이 있어 운영 구성이 아니었다 |
+| 개선 방법 | 도메인 소유 증명 기반의 관리형 발송 서비스(**Amazon SES**)로 전환하고, 발신 주소를 `noreply@pharmaflow.homes` 전용으로 통일 |
+| 적용 기술 | SES **서울(ap-northeast-2) 리전 SMTP**. 앱의 `EMAIL_*` 환경변수 → Ansible `env.j2` → EC2 `.env` 주입 구조(6번, 인프라 PR #38)라 **앱 코드 수정 0**. 도메인 인증: `pharmaflow.homes` **SES Domain Identity 검증 성공**, **DKIM SUCCESS**, **Custom MAIL FROM `mail.pharmaflow.homes` SUCCESS**, **SPF 설정**, **DMARC `p=none` 설정** |
+| 검증 결과 | SES Sandbox 에서 검증된 외부 수신자를 대상으로 **실제 발송 시험** — Django `send_mail()` 반환값 **1**(발송 성공), **실제 외부 메일함에서 `noreply@pharmaflow.homes` 발신 메일 수신 확인** |
+
+**반영 상태 (구분 필요)**: SES 설정이 포함된 **Golden AMI v6 → Launch Template v6 → ASG
+Rolling Refresh 는 현재 인프라 담당이 진행 중**이다. 최종 성공 여부는 인프라 담당 확인 후
+이 문단을 업데이트한다.
+
+### 보안 — SMTP Credential 취급
+
+- SMTP Username/Password 는 **Git 에 커밋하지 않는다.** 실제 값은 Git 에서 제외된
+  `group_vars/all/vault.yml` 에서만 관리하고, `.env` 는 소유자 전용(0640)으로 배포되며
+  Ansible 배포 태스크는 `no_log` 처리되어 있다
+- **현재 `vault.yml` 은 Ansible Vault 암호화까지 적용된 상태는 아니다** — Git 추적에서
+  제외되어 있을 뿐이므로, "Ansible Vault 암호화 적용 완료"라고 표현하면 안 된다
+- 향후 개선안: Ansible Vault 암호화 적용, AWS Secrets Manager / SSM Parameter Store 이관
+
+### 발표 예상 질문
+
+1. **왜 Gmail 대신 SES 를 사용했는가?**
+   Gmail 은 개인 계정과 앱 비밀번호에 의존해 팀 운영 자산이 아니고, `@pharmaflow.homes`
+   발신 주소를 쓸 수 없으며(도메인 정렬 불가 → 스팸 위험), 발송 한도·모니터링 통제도
+   어렵다. SES 는 도메인 소유 증명 기반으로 도메인 주소 발신이 가능하고, 다른 AWS
+   리소스처럼 IaC·모니터링과 통합 관리된다.
+2. **`noreply@pharmaflow.homes` 는 실제 Mailbox 인가?**
+   아니다. SES Domain Identity 는 "이 도메인 이름으로 발신할 권한"의 검증이지 수신함
+   생성이 아니다. 발신 전용 주소라 회신해도 도달하지 않으므로 noreply 로 명명했다.
+   수신이 필요하면 MX 레코드 + 수신 서비스를 별도로 구성해야 한다(이메일 인프라 문서 참조).
+3. **SPF / DKIM / DMARC 의 역할은?**
+   SPF 는 "이 도메인 이름으로 발송이 허용된 서버 목록"(DNS TXT), DKIM 은 발신 메일에
+   서명을 붙여 수신 측이 DNS 공개키로 위변조·사칭을 검증하게 하는 것, DMARC 는 두 검증에
+   실패한 메일을 어떻게 처리할지 도메인이 선언하는 정책이다. `p=none` 은 차단 없이
+   모니터링만 하는 단계다. Custom MAIL FROM(`mail.pharmaflow.homes`)은 SPF 검증 도메인을
+   자체 도메인으로 정렬시켜 DMARC 통과를 돕는다.
+4. **SES Sandbox 와 Production Access 의 차이는?**
+   Sandbox 는 사전 검증된 수신자에게만, 낮은 한도로 발송할 수 있는 시험 단계다.
+   Production Access 는 AWS 심사 승인 후 임의 수신자에게 발송할 수 있다. 현재는 Sandbox
+   단계라 검증된 외부 수신자로 발송 시험을 수행했다.
+5. **SMTP Credential 은 어떻게 보호하는가?**
+   위 "보안" 절과 같다 — Git 제외 `vault.yml` 관리, `.env` 0640 + `no_log`, 현재 Vault
+   암호화는 미적용(향후 개선안: Vault 암호화·Secrets Manager/SSM 이관).
+
 ## 7. STATIC_ROOT 환경변수화 및 Shared Static 구조
 
 | | |
