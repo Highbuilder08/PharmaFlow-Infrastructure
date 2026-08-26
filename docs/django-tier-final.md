@@ -78,15 +78,40 @@ Django Base EC2 1대                 Django ASG 2대 (App Private A/C, Multi-AZ)
 | 적용 기술 | 앱 PR #81: `STATIC_ROOT = Path(os.environ.get("STATIC_ROOT", BASE_DIR/"staticfiles"))` (LOG_DIR과 동일 패턴, 미설정 시 동작 불변). 인프라 PR #32: EFS를 `/srv/pharmaflow/static`에 마운트 → `env.j2`가 `STATIC_ROOT=/srv/pharmaflow/static/staticfiles` 주입 → collectstatic이 EFS에 산출 → Nginx `location /static/ { alias ... }`가 같은 EFS를 직접 서빙 |
 | 검증 결과 | 앱: override 경로로 collectstatic 실행, 134개 파일이 지정 경로에 복사됨 확인 + 기존 테스트 통과. 인프라: Nginx가 `/static/` 요청을 Django를 거치지 않고 EFS에서 직접 응답(앱 부하 제거). **ASG 신규 인스턴스에서도 동일 정적 파일이 보이는지는 오늘 장애시험에서 확인 항목** |
 
-## 오늘(8/26) 통합 장애시험 — Django 담당 기록 항목
+## 통합 장애시험 기록 — Django 담당 (2026-08-26)
 
-실험 조작은 통합 담당이 수행하고, Django 담당은 아래를 관측·기록한다.
+실험 조작은 통합 담당이 수행하고, Django 담당이 관측·기록했다.
 (관측 명령 상세: `docs/failover-verification.md`, `ansible/README.md` 재검증 체크리스트)
 
-| 시험 | 기록할 것 | 기대 |
-|---|---|---|
-| Django 인스턴스 강제 종료 | TG 상태 변화, ASG 대체 인스턴스 생성 시각, 서비스 응답 | 자동 복구, 서비스 무중단(1대 잔존) |
-| RDS Multi-AZ Failover | live/ready 코드 추이(관측 루프), AZ 스왑, ready 자동 회복, **인스턴스 교체 발생 여부** | live 내내 200, ready 503→200, 교체 0건 |
-| 신규 인스턴스 검증 | `systemctl is-active` / live·ready / EFS(media·static) 마운트 / `/static/` 응답 | 체크리스트 전 항목 통과 |
+> ⚠️ 아래 "실측 결과"는 단순 예상 결과가 아니라
+> **2026-08-26 실제 AWS 환경에서 수행한 장애시험의 실측 기록**이다.
 
-문제 발견 시: Django 담당이 앱/role 수정 → PR (오늘 대기 상태 유지).
+### 시험 1. Django 인스턴스 강제 종료 — 실측 완료
+
+사전 상태: Django ASG 2대 정상, Multi-AZ(`ap-northeast-2a` / `ap-northeast-2c`).
+`ap-northeast-2a` 의 Django 인스턴스 1대를 강제 종료했다.
+
+| 관측 항목 | 기대 | 실측 결과 (2026-08-26) |
+|---|---|---|
+| 외부 서비스 응답 | 무중단 (1대 잔존) | 장애 발생 중에도 **HTTP 200 유지** |
+| `/health/live/` · `/health/ready/` | 200 유지 | 둘 다 **HTTP 200 유지** |
+| 트래픽 처리 | 정상 인스턴스로 우회 | Internal ALB 가 잔존 정상 인스턴스로 트래픽 처리 |
+| ASG 자동 복구 | 대체 인스턴스 자동 생성 | 신규 인스턴스 자동 생성 — **Golden AMI v5 기반**, `ap-northeast-2a` 에 생성되어 **2a / 2c Multi-AZ 구조 자동 복원** |
+| TG 최종 상태 | 2/2 healthy | **2/2 healthy** |
+| 장애 감지 → 복귀 | CloudWatch 상태 전환 | `pharmaflow-django-tg-healthy-hosts` : `10:37:48` OK → ALARM, `10:38:48` ALARM → OK — **감지부터 정상 복귀까지 전 구간 상태 전환 확인** |
+
+문제 발견: 없음 — Django 앱/role 수정 PR 불필요.
+
+### 시험 2. RDS Multi-AZ Failover — 기록 대기
+
+| 기록할 것 | 기대 |
+|---|---|
+| live/ready 코드 추이(관측 루프), AZ 스왑, ready 자동 회복, **인스턴스 교체 발생 여부** | live 내내 200, ready 503→200, 교체 0건 |
+
+### 시험 3. 신규 인스턴스 검증 — 일부 실측
+
+시험 1에서 실측 확인된 것: Golden AMI v5 기반 기동, TG 등록(2/2 healthy).
+개별 체크리스트(`systemctl is-active` / live·ready 개별 응답 / EFS media·static 마운트 /
+`/static/` 응답)의 항목별 기록은 대기.
+
+이후 문제 발견 시: Django 담당이 앱/role 수정 → PR.
