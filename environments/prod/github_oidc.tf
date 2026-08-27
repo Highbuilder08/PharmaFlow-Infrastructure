@@ -41,7 +41,7 @@ resource "aws_iam_role" "github_infra_cd" {
           StringEquals = {
             "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
 
-            "token.actions.githubusercontent.com:sub" = "repo:Highbuilder08@80293873800/PharmaFlow-Infrastructure@1337933940:environment:production"
+            "token.actions.githubusercontent.com:sub" = "repo:Highbuilder08@293873800/PharmaFlow-Infrastructure@1337933940:environment:production"
           }
         }
       }
