@@ -58,7 +58,7 @@ Django Base EC2 1대                 Django ASG 2대 (App Private A/C, Multi-AZ)
 | 기존 문제 | ①DB가 단일 인스턴스(단일 장애 지점) ②앱이 DB 순단에 어떻게 반응하는지 정의되지 않음 ③보존 중인 구 RDS(pharmaflow-db)를 Failover 수단으로 오해할 여지 |
 | 개선 방법 | DB 고가용성은 RDS Multi-AZ(AWS 관리 Standby + 자동 Failover)로 확보하고, 앱은 "순단 후 자동 회복"이 되는 연결 방식을 확인해 둔다 |
 | 적용 기술 | `pharmaflow-db-tier` `multi_az=true` (PR #28). 앱 연결: `DB_HOST` 환경변수(RDS DNS) + `CONN_MAX_AGE` 미설정(=0, 요청마다 새 커넥션) → Failover로 DNS가 Standby를 가리키면 **재시작 없이** 새 요청부터 자동 회복. 구 RDS는 stopped 롤백용일 뿐 Standby가 아님을 문서에 명시 |
-| 검증 결과 | Failover 중 예상 신호를 사전 정의: live 200 유지 / ready 503(순단 60~120초) / 복구 후 ready 200 자동 회복. **실측은 오늘 장애시험에서 기록** — 시나리오·관측 루프·판정 기준은 `docs/failover-verification.md`에 준비 완료 |
+| 검증 결과 | **Failover 자체는 실측 완료** — 실제 RDS Event 로 `failover started → completed` 와 `available` 복구, Multi-AZ 구성 유지 확인 (아래 "통합 장애시험 기록" 시험 2). 단, Failover 중 live/ready 초 단위 추이·인스턴스 교체 0건은 직접 실측하지 않아 기대 신호(live 200 유지 / ready 503→200 / 교체 0건)로 남김 — 관측 절차는 `docs/failover-verification.md` |
 
 ## 6. Email — EMAIL_* 환경변수화
 
@@ -170,11 +170,23 @@ Django 인스턴스 장애
 
 문제 발견: 없음 — Django 앱/role 수정 PR 불필요.
 
-### 시험 2. RDS Multi-AZ Failover — 기록 대기
+### 시험 2. RDS Multi-AZ Failover — 실측 완료 (실측 범위 명시)
 
-| 기록할 것 | 기대 |
+`pharmaflow-db-tier` 는 **Multi-AZ 구성**이며, 실제 AWS 환경에서 Failover 를 수행해
+아래를 확인했다.
+
+| 관측 항목 | 실측 결과 |
 |---|---|
-| live/ready 코드 추이(관측 루프), AZ 스왑, ready 자동 회복, **인스턴스 교체 발생 여부** | live 내내 200, ready 503→200, 교체 0건 |
+| Failover 발생 | 실제 RDS Event 에서 **`Multi-AZ instance failover started`** 확인 |
+| Failover 완료 | 실제 RDS Event 에서 **`Multi-AZ instance failover completed`** 확인 |
+| DB 상태 복구 | Failover 이후 DB 가 다시 **`available`** 상태로 복구 |
+| AZ 구성 유지 | **Primary / Secondary AZ 가 Multi-AZ 구성으로 유지됨** |
+| 백업·복구 지점 | **Automated Snapshot 및 복구 가능 시점 확인 완료** |
+
+> ⚠️ **실측 범위**: 위 표는 RDS Event 와 최종 복구 상태에 대한 실측 기록이다.
+> Failover 진행 중 **live/ready 의 초 단위 응답 추이와 Django 인스턴스 교체 0건 여부는
+> 직접 실측하지 않았으므로 "검증 완료"로 기록하지 않는다.** 해당 기대 신호
+> (live 내내 200 / ready 503→200 / 교체 0건)는 5절의 사전 정의로 남긴다.
 
 ### 시험 3. 신규 인스턴스 검증 — 일부 실측
 
