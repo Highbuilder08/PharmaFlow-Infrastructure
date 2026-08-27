@@ -487,14 +487,14 @@ Nginx가 단일 EC2로 구성되어 있으면 해당 인스턴스 장애가 Web 
 - Desired Capacity 2
 - ap-northeast-2a / ap-northeast-2c Multi-AZ 배치
 - Public ALB Health Check를 통한 정상 인스턴스 선별
-- 장애 인스턴스 발생 시 ASG가 신규 인스턴스 자동 생성
+- 인스턴스 종료 또는 불능으로 Desired Capacity가 부족해지면 ASG가 신규 인스턴스 자동 생성
 - Golden AMI v3와 Launch Template을 이용한 동일 구성 재생성
 
-실제 장애시험에서도 Nginx 인스턴스 1대를 종료한 후 ASG가 대체 인스턴스를 자동 생성하는 것을 확인하였다.
+실제 장애시험에서는 Nginx 인스턴스 1대를 종료하였고, 그 결과 ASG의 실제 인스턴스 수가 Desired Capacity보다 부족해지면서 대체 Nginx 인스턴스가 자동 생성되는 것을 확인하였다.
 
 ### 발표 답변
 
-"Nginx가 한 대뿐이면 해당 서버 장애가 전체 서비스 장애로 이어질 수 있기 때문에 Nginx도 ASG로 이중화했습니다. 실제 시험에서도 한 대를 종료했을 때 서비스가 유지됐고, ASG가 새로운 Nginx 인스턴스를 자동 생성하는 것을 확인했습니다."
+"Nginx가 한 대뿐이면 해당 서버 장애가 전체 서비스 장애로 이어질 수 있기 때문에 Nginx도 ASG로 이중화했습니다. 실제 시험에서는 Nginx 한 대를 종료했지만 서비스가 유지되었고, 인스턴스 수가 Desired Capacity보다 부족해지자 ASG가 새로운 Nginx 인스턴스를 자동 생성해 수량을 복구하는 것을 확인했습니다."
 
 
 ### Q4. 왜 Static을 EFS에 저장했는가?
@@ -519,23 +519,25 @@ Django가 `collectstatic`으로 자신의 로컬 디스크에 Static 파일을 �
 
 ### Q5. Nginx 1대 장애 시 서비스가 어떻게 유지되는가?
 
-Nginx ASG에는 2개의 인스턴스가 서로 다른 Availability Zone에 배치되어 있으며 Public ALB가 두 인스턴스의 상태를 확인한다.
+Nginx ASG에는 2개의 인스턴스가 서로 다른 Availability Zone에 배치되어 있으며 Public ALB가 Target Group의 Health Check 결과를 기준으로 정상 Nginx 인스턴스에 요청을 전달한다.
 
-한 Nginx 인스턴스에 장애가 발생하면 다음과 같은 흐름으로 처리된다.
+한 Nginx 인스턴스가 종료되거나 정상적으로 요청을 처리할 수 없게 되면 다음과 같은 흐름으로 처리된다.
 
-1. Nginx 인스턴스 1대 장애 발생
+1. Nginx 인스턴스 1대 장애 또는 종료
 2. Public ALB가 정상 상태의 Nginx Target으로 요청 전달
-3. 장애가 발생한 Target은 서비스 대상에서 제외
+3. 비정상 또는 종료된 Target은 Public ALB의 트래픽 대상에서 제외
 4. ASG가 Desired Capacity 2를 복구하기 위해 신규 Nginx 인스턴스 생성
 5. 신규 인스턴스가 Target Group에 등록
 6. Health Check 통과 후 정상 Target으로 트래픽 처리
 7. 최종 Target Group 2 of 2 healthy 복구
 
-실제 장애시험에서 Nginx 인스턴스 종료 시간대에도 Public ALB의 HTTP 2XX 응답이 계속 기록되었으며, 이후 ASG 자동복구까지 확인하였다.
+이 구조에서 Public ALB는 정상 Target으로 트래픽을 전달하여 서비스 지속을 담당하고, ASG는 부족해진 인스턴스 수를 복구하는 역할을 담당한다.
+
+실제 장애시험에서는 Nginx 인스턴스 종료 시간대에도 Public ALB의 HTTP 2XX 응답이 계속 기록되었으며, 이후 ASG가 신규 Nginx 인스턴스를 생성하고 최종적으로 Target Group이 2 of 2 healthy 상태로 복구되는 것을 확인하였다.
 
 ### 발표 답변
 
-"Nginx 한 대에 장애가 발생하면 Public ALB가 정상 상태인 다른 Nginx로 요청을 전달합니다. 동시에 ASG가 Desired Capacity를 유지하기 위해 새로운 인스턴스를 생성하고, Health Check를 통과하면 다시 Target Group에 등록됩니다. 실제 장애시험에서도 장애 시간대에 HTTP 2XX 응답이 유지됐고 최종적으로 2 of 2 healthy까지 복구됐습니다."
+"Nginx 한 대가 종료되면 Public ALB는 정상 상태인 다른 Nginx로 요청을 전달해 서비스를 계속 유지합니다. 종료되거나 비정상 상태인 Target은 트래픽 대상에서 제외되고, ASG는 Desired Capacity 2를 맞추기 위해 새로운 Nginx 인스턴스를 생성합니다. 신규 인스턴스가 Health Check를 통과하면 다시 정상 Target으로 트래픽을 처리하며, 실제 시험에서도 장애 시간대에 HTTP 2XX 응답이 유지되고 최종적으로 2 of 2 healthy까지 복구되는 것을 확인했습니다."
 
 
 ### Q6. Golden AMI와 Launch Template의 역할 차이는?
@@ -562,24 +564,24 @@ Launch Template은 EC2를 어떤 조건으로 생성할 것인지 정의한다.
 
 ### Q7. 장애가 발생했는데 CloudWatch ALARM이 항상 발생하지 않을 수도 있는 이유는?
 
-CloudWatch Alarm은 장애 발생 자체만으로 즉시 ALARM 상태가 되는 것이 아니라 설정된 Metric, Period, Evaluation Period 등의 조건을 만족해야 상태가 변경된다.
+CloudWatch Alarm은 장애 발생 자체만으로 즉시 ALARM 상태가 되는 것이 아니라 설정된 Metric, Period, Evaluation Period 등의 평가 조건을 만족해야 상태가 변경된다.
 
 이번 Nginx 장애시험에서는 ASG의 자동복구가 빠르게 진행되었다.
 
-따라서 다음과 같은 상황이 발생할 수 있다.
+장애 및 복구 과정에서는 다음과 같은 동작이 발생할 수 있다.
 
-- Nginx 인스턴스 1대 장애 발생
-- HealthyHostCount 일시 감소
-- ASG가 신규 인스턴스 생성
+- Nginx 인스턴스 1대 장애 또는 종료
+- 장애 상황에서 HealthyHostCount가 일시적으로 감소할 수 있음
+- ASG가 부족해진 인스턴스 수를 복구하기 위해 신규 인스턴스 생성
 - 신규 Target이 Health Check 통과
-- Alarm의 평가 조건을 충족하기 전에 정상 상태로 복구
+- Alarm의 평가 조건을 충족하기 전에 정상 상태로 복구될 수 있음
 
 따라서 실제 장애가 발생했더라도 장애 지속시간이 CloudWatch Alarm의 평가기간보다 짧으면 ALARM 상태 전환이나 알림 발송이 발생하지 않을 수 있다.
 
-이는 장애 감지가 실패했다는 의미가 아니라 Alarm의 평가 조건과 실제 장애 지속시간 사이의 관계에 따른 결과이다.
+이는 장애 감지가 실패했다는 의미가 아니라 CloudWatch Alarm의 평가 조건과 실제 장애 및 복구 시간 사이의 관계에 따른 결과이다.
 
 SNS 자체의 ALARM/OK 이메일 알림 동작은 별도 시험에서 정상 동작을 검증하였다.
 
 ### 발표 답변
 
-"CloudWatch Alarm은 장애가 발생하는 즉시 무조건 울리는 것이 아니라 설정된 평가기간과 임계조건을 충족해야 합니다. 이번에는 ASG의 자동복구가 빠르게 진행되어 평가조건을 충족하기 전에 HealthyHostCount가 정상화될 수 있었습니다. 따라서 장애가 있었더라도 ALARM이 항상 발생하는 것은 아니며, SNS 이메일 알림 기능 자체는 별도 시험에서 정상 동작을 확인했습니다."
+"CloudWatch Alarm은 장애가 발생하는 즉시 무조건 ALARM으로 전환되는 것이 아니라 설정된 평가기간과 임계조건을 충족해야 합니다. 장애 상황에서는 HealthyHostCount가 일시적으로 감소할 수 있지만, ASG의 자동복구가 빠르면 Alarm의 평가 조건을 충족하기 전에 정상화될 수도 있습니다. 따라서 장애가 발생했더라도 ALARM이 항상 발생하는 것은 아니며, SNS의 ALARM/OK 이메일 알림 기능 자체는 별도 시험에서 정상 동작을 확인했습니다."
