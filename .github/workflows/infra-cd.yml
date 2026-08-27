@@ -1,0 +1,50 @@
+name: Infrastructure CD
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  terraform-plan:
+    name: Terraform Production Plan
+    runs-on: ubuntu-latest
+
+    environment: production
+
+    defaults:
+      run:
+        working-directory: environments/prod
+
+    steps:
+      - name: 저장소 코드 가져오기
+        uses: actions/checkout@v4
+
+      - name: AWS OIDC 인증
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: AWS 인증 확인
+        run: aws sts get-caller-identity
+
+      - name: Terraform 설치
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.8"
+
+      - name: Terraform 버전 확인
+        run: terraform version
+
+      - name: Terraform 초기화
+        run: terraform init -input=false
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        run: terraform plan -input=false -no-color
+
