@@ -1,0 +1,127 @@
+name: Infrastructure CI
+
+on:
+  pull_request:
+    branches:
+      - main
+
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  terraform:
+    name: Terraform Check
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: environments/prod
+
+    steps:
+      - name: 저장소 코드 가져오기
+        uses: actions/checkout@v4
+
+      - name: Terraform 설치
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.8"
+
+      - name: Terraform 버전 확인
+        run: terraform version
+
+      - name: Terraform Format 검사
+        run: terraform fmt -check -recursive
+
+      - name: Terraform 초기화
+        run: terraform init -backend=false -input=false
+
+      - name: Terraform Validate
+        run: terraform validate
+
+  ansible:
+    name: Ansible Check
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ansible
+
+    steps:
+      - name: 저장소 코드 가져오기
+        uses: actions/checkout@v4
+
+      - name: Python 설치
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Ansible 설치
+        run: |
+          python -m pip install --upgrade pip
+          pip install "ansible-core==2.16.3"
+
+      - name: Ansible 버전 확인
+        run: ansible --version
+
+      - name: Django Playbook 문법 검사
+        run: ansible-playbook django.yml --syntax-check
+
+      - name: Nginx Playbook 문법 검사
+        run: ansible-playbook nginx.yml --syntax-check
+
+  repository-security:
+    name: Repository Security Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 저장소 코드 가져오기
+        uses: actions/checkout@v4
+
+      - name: Secret 파일 Git 추적 여부 검사
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "===== Git tracked secret files check ====="
+
+          FOUND=0
+
+          for FILE in \
+            "ansible/group_vars/all/vault.yml" \
+            "ansible/group_vars/all/local.yml"
+          do
+            if git ls-files --error-unmatch "$FILE" >/dev/null 2>&1; then
+              echo "::error::$FILE is tracked by Git."
+              FOUND=1
+            else
+              echo "OK: $FILE is not tracked."
+            fi
+          done
+
+          if [ "$FOUND" -ne 0 ]; then
+            echo "Secret file tracking detected."
+            exit 1
+          fi
+
+          echo "Secret files are not tracked by Git."
+
+      - name: 허용된 Example 파일 확인
+        shell: bash
+        run: |
+          echo "===== Example configuration files ====="
+
+          for FILE in \
+            "ansible/group_vars/all/vault.yml.example" \
+            "ansible/group_vars/all/local.yml.example"
+          do
+            if [ -f "$FILE" ]; then
+              echo "FOUND: $FILE"
+            else
+              echo "INFO: $FILE does not exist."
+            fi
+          done
+
