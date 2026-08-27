@@ -196,3 +196,10 @@ output "ses_dkim_status" {
   description = "Amazon SES DKIM status"
   value       = aws_sesv2_email_identity.pharmaflow.dkim_signing_attributes[0].status
 }
+
+# ── github_infra_cd ────────────────────────────────────────────
+
+output "github_infra_cd_role_arn" {
+  description = "IAM Role ARN for GitHub Actions Infrastructure CD via OIDC"
+  value       = aws_iam_role.github_infra_cd.arn
+}
