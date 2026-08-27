@@ -1,0 +1,98 @@
+name: Infrastructure CD
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  terraform-plan:
+    name: Terraform Production Plan
+    runs-on: ubuntu-latest
+
+    environment: production
+
+    env:
+      TF_VAR_admin_cidr: ${{ vars.ADMIN_CIDR }}
+      TF_VAR_ec2_key_name: ${{ vars.EC2_KEY_NAME }}
+      TF_VAR_db_name: ${{ vars.DB_NAME }}
+      TF_VAR_db_username: ${{ vars.DB_USERNAME }}
+      TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
+      TF_VAR_domain_name: ${{ vars.DOMAIN_NAME }}
+      TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
+
+    defaults:
+      run:
+        working-directory: environments/prod
+
+    steps:
+      - name: 저장소 코드 가져오기
+        uses: actions/checkout@v4
+
+      - name: GitHub OIDC Claim 확인
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TOKEN_RESPONSE=$(curl -sSf \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com")
+
+          TOKEN=$(python -c \
+            'import json,sys; print(json.load(sys.stdin)["value"])' \
+            <<< "$TOKEN_RESPONSE")
+
+          PAYLOAD=$(printf '%s' "$TOKEN" | cut -d. -f2)
+
+          python - "$PAYLOAD" <<'PY'
+          import base64
+          import json
+          import sys
+
+          payload = sys.argv[1]
+          payload += "=" * (-len(payload) % 4)
+
+          claims = json.loads(
+              base64.urlsafe_b64decode(payload).decode()
+          )
+
+          for key in [
+              "iss",
+              "aud",
+              "sub",
+              "repository",
+              "ref",
+              "environment",
+              "job_workflow_ref",
+          ]:
+              print(f"{key}={claims.get(key)}")
+          PY
+
+      - name: AWS OIDC 인증
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: AWS 인증 확인
+        run: aws sts get-caller-identity
+
+      - name: Terraform 설치
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.8"
+
+      - name: Terraform 버전 확인
+        run: terraform version
+
+      - name: Terraform 초기화
+        run: terraform init -input=false
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        run: terraform plan -input=false -no-color
+
