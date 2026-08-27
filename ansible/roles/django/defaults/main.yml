@@ -17,103 +17,166 @@ django_service_name: pharmaflow
 django_wsgi_module: "mysite.wsgi:application"
 
 # ── Gunicorn ──────────────────────────────────────────────────────
-# ⚠️ 중요: Nginx(그리고 나중엔 Internal ALB)가 "다른 EC2"에 있으므로
-#    127.0.0.1 이 아니라 0.0.0.0 으로 열어야 접근할 수 있습니다.
-#    (앱 저장소의 gunicorn.conf.py 기본값은 127.0.0.1)
-#    보안은 Django SG 에서 8000 인바운드를 제한하는 방식으로 잡습니다.
+# ⚠️ 중요:
+# Internal ALB가 별도 EC2의 Django ASG 인스턴스로 접근하므로
+# 127.0.0.1 이 아니라 0.0.0.0 으로 열어야 접근할 수 있습니다.
+# (앱 저장소의 gunicorn.conf.py 기본값은 127.0.0.1)
+#
+# 외부에서 8000 포트를 직접 허용하는 것은 아니며,
+# Django SG 에서 Internal ALB SG → TCP 8000 만 허용하는 방식으로 보호합니다.
 django_gunicorn_bind: "0.0.0.0:8000"
 django_gunicorn_workers: 3
 
 # ⚠️ 반드시 대문자입니다.
-#    이 값은 gunicorn 과 Django LOGGING 양쪽이 같이 씁니다.
-#      - gunicorn.conf.py : os.environ["LOG_LEVEL"].lower() → 소문자로 바꿔 씀
-#      - settings.py      : LOGGING["root"]["level"] 에 그대로 들어감
-#    파이썬 logging 은 "info" 같은 소문자를 거부합니다.
-#      ValueError: Unable to configure root logger
-#    → 소문자로 두면 migrate 도 gunicorn 도 전부 죽습니다.
+# 이 값은 gunicorn 과 Django LOGGING 양쪽이 같이 씁니다.
+#
+#   - gunicorn.conf.py : os.environ["LOG_LEVEL"].lower()
+#   - settings.py      : LOGGING["root"]["level"]
+#
+# 파이썬 logging 은 "info" 같은 소문자를 거부할 수 있습니다.
+#
+#   ValueError: Unable to configure root logger
+#
+# → 소문자로 두면 migrate / gunicorn 모두 실패할 수 있습니다.
 django_log_level: INFO
 
 # ── Django 설정 ───────────────────────────────────────────────────
 django_debug: "False"
+
 # django_allowed_hosts 는 group_vars/all/vars.yml 에서 관리합니다.
-# (여기 적어두면 group_vars 가 항상 이겨서 헷갈리기만 합니다)
+# (여기 적어두면 group_vars 가 항상 이겨서 관리 위치가 혼동될 수 있습니다)
 
 # ── DB (RDS MariaDB) ──────────────────────────────────────────────
 # 최종 구조에서는 EC2 자체 MariaDB가 아니라 RDS를 사용합니다.
 #
 # ⚠️ 실제 엔드포인트를 여기 적지 마세요. 이 저장소는 Public 입니다.
-#    RDS 엔드포인트는 전 세계에서 resolve 되는 AWS 리소스 식별자라,
-#    이미 공개된 VPC CIDR·SG 와 합쳐지면 내부 구성이 그대로 드러납니다.
-#    실제 값은 커밋되지 않는 group_vars/all/local.yml 에 둡니다.
-#      django_db_host: <RDS 엔드포인트>
-#    (우선순위: role defaults < group_vars 라서 아래 값이 덮어써집니다)
+# RDS 엔드포인트는 AWS 리소스 식별 정보이므로
+# 실제 값은 커밋되지 않는 group_vars/all/local.yml 에 둡니다.
+#
+#   django_db_host: <RDS 엔드포인트>
+#
+# 우선순위:
+# role defaults < group_vars
+#
+# 따라서 아래 placeholder 값은 실제 배포 시 local.yml 값으로 덮어써집니다.
 django_db_name: pharmaflow
 django_db_user: pharmaflow_user
 django_db_host: "REPLACE-WITH-RDS-ENDPOINT"
 django_db_port: 3306
-# django_db_password 는 여기 두지 않습니다. group_vars/all/vault.yml 참고.
+
+# django_db_password 는 여기 두지 않습니다.
+# group_vars/all/vault.yml 에서 관리합니다.
+
+# ── Email (Amazon SES SMTP) ───────────────────────────────────────
+# SES SMTP의 비밀값이 아닌 공통 설정만 여기서 관리합니다.
+#
+# SMTP Username / Password 는 group_vars/all/vault.yml 에서 관리합니다.
+#
+# 앱의 EMAIL_* 설정은 환경변수를 통해 주입되며
+# roles/django/templates/env.j2 에서 아래 변수들을 사용합니다.
+
+django_email_backend: "django.core.mail.backends.smtp.EmailBackend"
+
+# Amazon SES Seoul(ap-northeast-2) SMTP Endpoint
+django_email_host: "email-smtp.ap-northeast-2.amazonaws.com"
+django_email_port: 587
+
+# STARTTLS 사용
+django_email_use_tls: "True"
+
+# TLS(587)와 SSL(465)을 동시에 사용하지 않으므로 False
+django_email_use_ssl: "False"
+
+# SES Domain Identity 검증이 완료된 발신 주소
+# env.j2 의 DEFAULT_FROM_EMAIL={{ django_email_from }} 과 연결됩니다.
+django_email_from: "noreply@pharmaflow.homes"
+
+# 비밀값:
+#
+# django_email_host_user
+#   → group_vars/all/vault.yml
+#
+# django_email_host_password
+#   → group_vars/all/vault.yml
 
 # ── 외부 API ──────────────────────────────────────────────────────
-# django_hira_service_key 도 vault 에서 관리
+# django_hira_service_key 도 group_vars/all/vault.yml 에서 관리합니다.
 
 # ── media 공유 스토리지 ───────────────────────────────────────────
-# Django가 여러 대로 늘어나면(ASG) 업로드 파일을 EC2 로컬에 두면 안 됩니다.
-# Django-1에 올린 사진이 Django-2에는 없는 상태가 되기 때문입니다.
+# Django가 여러 대로 늘어나면(ASG)
+# 업로드 파일을 EC2 로컬 디스크에 두면 안 됩니다.
 #
-#   efs   : AWS EFS 마운트 (최종 구조)
-#   nfs   : 직접 띄운 NFS 서버 마운트
-#   local : 마운트 안 함 (기준 서버 1대 검증용)
+# 예:
+# Django-1 에 업로드한 파일이 Django-2 에 존재하지 않는 문제가 발생할 수 있습니다.
 #
-# settings.py 의 MEDIA_ROOT 가 BASE_DIR/media 이므로,
-# 그 경로에 마운트하면 앱 코드 수정 없이 그대로 동작합니다.
+#   efs   : AWS EFS 마운트 (최종 운영 구조)
+#   nfs   : 직접 구성한 NFS 서버 마운트
+#   local : 마운트 안 함 (기준 서버 단독 검증용)
+#
+# settings.py 의 MEDIA_ROOT 가 BASE_DIR/media 이므로
+# 해당 경로에 EFS/NFS를 마운트하면 앱 코드 수정 없이 사용할 수 있습니다.
 django_media_storage: efs
 
 # EFS 사용 시 (django_media_storage: efs)
 #
-# ⚠️ django_db_host 와 같은 이유로 실제 DNS 이름을 여기 적지 마세요.
-#    group_vars/all/local.yml 의 efs_dns 에서 내려받습니다.
-#    (nginx role 의 nginx_efs_dns 와 같은 패턴 - efs_dns 하나만 채우면 양쪽에 적용)
+# ⚠️ 실제 EFS DNS 이름은 Public Git 저장소에 고정하지 않습니다.
+#
+# 실제 값:
+#   group_vars/all/local.yml
+#
+# 공통 변수 efs_dns 하나를 사용해 Django / Nginx 양쪽에서 공유합니다.
 django_efs_dns: "{{ efs_dns | default('REPLACE-WITH-EFS-DNS') }}"
 
-# 직접 띄운 NFS 서버 사용 시 (django_media_storage: nfs)
-# 실제 IP 는 group_vars/all/local.yml 에서 덮어씁니다 (코드에 IP 고정 금지)
+# 직접 구성한 NFS 서버 사용 시
+# 실제 IP는 group_vars/all/local.yml 에서 덮어씁니다.
 django_nfs_server: "REPLACE-WITH-NFS-SERVER"
 django_nfs_export: /srv/pharmaflow/media
 
 # ── static 공유 스토리지 ──────────────────────────────────────────
-# 3-Tier 구조에서는 Django와 Nginx가 서로 다른 EC2에서 실행됩니다.
+# 3-Tier 구조에서는 Django와 Nginx가 서로 다른 EC2 / ASG에서 실행됩니다.
 #
 # Django의 collectstatic 결과가 Django EC2 로컬에만 존재하면
-# Nginx ASG에서는 해당 파일을 볼 수 없습니다.
+# Nginx ASG 인스턴스에서는 해당 파일을 볼 수 없습니다.
 #
 # 따라서 collectstatic 결과를 공용 EFS에 저장하고
-# Nginx ASG가 같은 EFS에서 정적 파일을 제공하도록 구성합니다.
+# Nginx ASG가 동일한 EFS를 마운트하여 /static/ 요청을 직접 제공합니다.
 #
 # 최종 흐름:
 #
 # Django collectstatic
-#   → /srv/pharmaflow/static/staticfiles
-#   → EFS
-#
-# Nginx
-#   → 같은 EFS
-#   → /static/ 요청을 직접 제공
+#   ↓
+# /srv/pharmaflow/static/staticfiles
+#   ↓
+# Amazon EFS
+#   ↓
+# Nginx ASG
+#   ↓
+# /static/ 직접 제공
+
 django_static_storage: efs
 
 # EFS 자체를 마운트할 경로
 django_static_mount_path: "/srv/pharmaflow/static"
 
-# Django STATIC_ROOT로 사용할 실제 경로
-# Django 앱의 STATIC_ROOT 환경변수화가 완료되면
-# 이 값을 env.j2를 통해 전달합니다.
+# Django STATIC_ROOT 실제 경로
+#
+# env.j2:
+#   STATIC_ROOT={{ django_static_root }}
+#
+# Django settings.py 에서는 STATIC_ROOT 환경변수를 읽습니다.
 django_static_root: "{{ django_static_mount_path }}/staticfiles"
 
 # ── OS 패키지 ─────────────────────────────────────────────────────
-# ⚠️ AMI 전제: Ubuntu 24.04 (Noble). Django 6.0 이 Python 3.12+ 를 요구합니다.
-#    22.04(Python 3.10)에서는 python3.12-venv 패키지가 없어 1단계부터 실패합니다.
+# ⚠️ AMI 전제: Ubuntu 24.04 (Noble)
 #
-# mysqlclient(파이썬 패키지)는 소스 빌드라서 컴파일러와 헤더가 필요합니다.
-# 이 목록에서 하나라도 빠지면 pip install 단계에서 반드시 실패합니다.
+# Django 6.0 은 Python 3.12+ 환경을 사용하므로
+# 현재 운영 AMI는 Ubuntu 24.04 / Python 3.12 기준입니다.
+#
+# mysqlclient 는 소스 빌드 과정에서
+# 컴파일러와 MySQL/MariaDB 개발 헤더가 필요합니다.
+#
+# 아래 패키지가 누락되면 pip install 단계에서 실패할 수 있습니다.
+
 django_apt_packages:
   - python3.12-venv
   - python3-dev
@@ -122,24 +185,4 @@ django_apt_packages:
   - libmysqlclient-dev
   - git
   - nfs-common
-
-# ── Email (SES SMTP 예정) ─────────────────────────────────────────
-# 앱의 EMAIL_* 설정(앱 PR #80)은 전부 환경변수 주입이므로, 여기 값만 채우면
-# 코드 수정 없이 어떤 SMTP 서비스로든 전환됩니다.
-#
-# SMTP 자격증명(사용자/비밀번호)은 여기 두지 않습니다.
-#   → group_vars/all/vault.yml 의 django_email_host_user / django_email_host_password
-#   (SES SMTP credential 은 IAM 액세스 키와 다른 별도 발급값입니다)
-django_email_backend: django.core.mail.backends.smtp.EmailBackend
-
-# SES 리전 공용 SMTP 엔드포인트 (계정 무관 공개 주소라 커밋해도 안전).
-# 다른 서비스로 바뀌면 local.yml 에서 django_email_host 를 덮어씁니다.
-django_email_host: email-smtp.ap-northeast-2.amazonaws.com
-django_email_port: 587
-django_email_use_tls: "True"
-django_email_use_ssl: "False"
-
-# 발신 주소. @pharmaflow.homes 는 SES 도메인 검증(SPF/DKIM) 후에 유효합니다.
-# ⚠️ .env 는 systemd EnvironmentFile 로 읽히므로 공백 있는
-#    "PharmaFlow <noreply@...>" 형식 대신 주소만 씁니다.
-django_email_from: noreply@pharmaflow.homes
+  
