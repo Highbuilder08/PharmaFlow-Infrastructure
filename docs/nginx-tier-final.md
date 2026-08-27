@@ -415,7 +415,7 @@ Django ASG
 * `/static/` Alias 정상 동작
 * 외부 Static 요청 HTTP 200
 * Nginx 인스턴스 1대 실제 종료
-* 장애 중 외부 서비스 HTTP 200 유지
+* 장애 중 외부 서비스 지속 및 Public ALB HTTP 2XX 응답 확인
 * Public ALB를 통한 정상 Nginx 서비스 지속
 * ASG 신규 Nginx 자동 생성
 * 신규 Nginx Golden AMI v3 적용
@@ -429,10 +429,159 @@ Django ASG
 
 
 ## 발표 예상 질문
-- 왜 Nginx 앞에 ALB가 필요한가?
-- 왜 Nginx 뒤에 Internal ALB가 또 필요한가?
-- 왜 Nginx도 ASG로 구성했는가?
-- 왜 Static을 EFS에 저장했는가?
-- Nginx 1대 장애 시 서비스가 어떻게 유지되는가?
-- Golden AMI와 Launch Template의 역할 차이는?
-- 장애가 발생했는데 CloudWatch ALARM이 항상 발생하지 않을 수도 있는 이유는?
+
+### Q1. 왜 Nginx 앞에 Public ALB가 필요한가?
+
+Public ALB와 Internal ALB는 서로 다른 역할을 담당한다.
+
+- Public ALB는 외부 HTTPS 요청을 받아 정상 상태의 Nginx 인스턴스로 분산한다.
+- Nginx는 Web Tier에서 Reverse Proxy와 Static 파일 제공을 담당한다.
+- Internal ALB는 Nginx에서 전달된 요청을 정상 상태의 Django ASG 인스턴스로 분산한다.
+- Django 인스턴스를 외부에 직접 노출하지 않고 Private App Tier 내부에 유지할 수 있다.
+
+따라서 전체 요청 흐름은 다음과 같다.
+
+Public ALB → Nginx ASG → Internal ALB → Django ASG
+
+이 구조를 통해 Web Tier와 App Tier를 분리하고 각 Tier를 독립적으로 이중화할 수 있으며, 특정 EC2의 Private IP에 의존하지 않는 구조를 구성하였다.
+
+### 발표 답변
+
+"Public ALB는 외부 요청을 Nginx ASG로 분산하고, Internal ALB는 Nginx에서 전달된 요청을 Django ASG로 분산합니다. 이를 통해 Web Tier와 App Tier를 분리하고 각 계층을 독립적으로 이중화했으며, Django 인스턴스를 외부에 직접 노출하지 않도록 구성했습니다."
+
+
+### Q2. 왜 Nginx 뒤에 Internal ALB가 또 필요한가?
+
+Nginx 뒤의 Django도 단일 EC2가 아니라 Auto Scaling Group으로 구성되어 있기 때문이다.
+
+Django ASG의 인스턴스는 장애 복구나 Instance Refresh 과정에서 교체될 수 있으며, 이때 Private IP도 변경된다.
+
+기존에는 Nginx가 특정 Django EC2의 Private IP를 직접 참조했기 때문에 해당 인스턴스가 교체되면 Nginx의 Backend 설정도 영향을 받을 수 있었다.
+
+이를 해결하기 위해 Nginx와 Django ASG 사이에 Internal ALB를 구성하였다.
+
+- Nginx는 특정 Django Private IP를 직접 참조하지 않음
+- Nginx Backend는 `internal_alb_dns`를 사용
+- Internal ALB가 정상 상태의 Django Target으로 요청 분산
+- Django 인스턴스가 교체되어도 Nginx 설정 변경 불필요
+- Django ASG의 Multi-AZ 및 자동복구 구조와 연동 가능
+- Django Tier를 외부에 직접 노출하지 않고 내부 네트워크에서 연결
+
+따라서 요청 흐름은 다음과 같다.
+
+Nginx ASG → Internal ALB → Django ASG
+
+Internal ALB를 통해 Nginx와 개별 Django 인스턴스 사이의 직접적인 IP 의존성을 제거하고, Django ASG의 인스턴스가 변경되더라도 안정적으로 Backend 요청을 전달할 수 있도록 구성하였다.
+
+### 발표 답변
+
+"Nginx 뒤에 Internal ALB를 둔 가장 중요한 이유는 Django의 고정 Private IP 의존성을 제거하기 위해서입니다. Django도 ASG이기 때문에 장애나 교체 과정에서 인스턴스와 IP가 변경될 수 있습니다. Nginx가 특정 Django IP를 직접 바라보는 대신 Internal ALB의 DNS를 바라보도록 구성했고, Internal ALB가 정상 Django 인스턴스로 요청을 분산하도록 했습니다. 따라서 Django 인스턴스가 교체되어도 Nginx 설정을 변경할 필요가 없습니다."
+
+
+### Q3. 왜 Nginx도 ASG로 구성했는가?
+
+Nginx가 단일 EC2로 구성되어 있으면 해당 인스턴스 장애가 Web Tier 전체 장애로 이어지는 Single Point of Failure가 발생한다.
+
+이를 방지하기 위해 Nginx도 Auto Scaling Group으로 구성하였다.
+
+- Desired Capacity 2
+- ap-northeast-2a / ap-northeast-2c Multi-AZ 배치
+- Public ALB Health Check를 통한 정상 인스턴스 선별
+- 인스턴스 종료 또는 불능으로 Desired Capacity가 부족해지면 ASG가 신규 인스턴스 자동 생성
+- Golden AMI v3와 Launch Template을 이용한 동일 구성 재생성
+
+실제 장애시험에서는 Nginx 인스턴스 1대를 종료하였고, 그 결과 ASG의 실제 인스턴스 수가 Desired Capacity보다 부족해지면서 대체 Nginx 인스턴스가 자동 생성되는 것을 확인하였다.
+
+### 발표 답변
+
+"Nginx가 한 대뿐이면 해당 서버 장애가 전체 서비스 장애로 이어질 수 있기 때문에 Nginx도 ASG로 이중화했습니다. 실제 시험에서는 Nginx 한 대를 종료했지만 서비스가 유지되었고, 인스턴스 수가 Desired Capacity보다 부족해지자 ASG가 새로운 Nginx 인스턴스를 자동 생성해 수량을 복구하는 것을 확인했습니다."
+
+
+### Q4. 왜 Static을 EFS에 저장했는가?
+
+3-Tier 구조로 전환하면서 Django와 Nginx가 서로 다른 ASG 인스턴스에서 실행되기 때문에 로컬 디스크를 공유할 수 없게 되었다.
+
+Django가 `collectstatic`으로 자신의 로컬 디스크에 Static 파일을 생성하면 다른 Nginx 인스턴스에서는 해당 파일을 볼 수 없어 `/static/` 요청에서 404가 발생할 수 있다.
+
+이를 해결하기 위해 Shared Static 구조를 적용하였다.
+
+- Django의 `collectstatic` 결과를 공용 EFS에 저장
+- Nginx ASG도 동일한 EFS를 마운트
+- Nginx의 `/static/` 요청을 EFS의 Static 경로로 연결
+- 어느 Nginx 인스턴스가 요청을 처리해도 동일한 Static 파일 제공
+
+실제 외부 요청에서 logo와 CSS 파일이 HTTP 200으로 응답하는 것을 확인하였다.
+
+### 발표 답변
+
+"Django와 Nginx가 서로 다른 ASG 인스턴스로 분리되면서 로컬 Static 파일을 공유할 수 없는 문제가 있었습니다. 그래서 Django의 collectstatic 결과를 EFS에 저장하고 Nginx가 동일한 EFS를 사용하도록 구성했습니다. 이를 통해 어느 Nginx 인스턴스에서도 동일한 Static 파일을 제공할 수 있습니다."
+
+
+### Q5. Nginx 1대 장애 시 서비스가 어떻게 유지되는가?
+
+Nginx ASG에는 2개의 인스턴스가 서로 다른 Availability Zone에 배치되어 있으며 Public ALB가 Target Group의 Health Check 결과를 기준으로 정상 Nginx 인스턴스에 요청을 전달한다.
+
+한 Nginx 인스턴스가 종료되거나 정상적으로 요청을 처리할 수 없게 되면 다음과 같은 흐름으로 처리된다.
+
+1. Nginx 인스턴스 1대 장애 또는 종료
+2. Public ALB가 정상 상태의 Nginx Target으로 요청 전달
+3. 비정상 또는 종료된 Target은 Public ALB의 트래픽 대상에서 제외
+4. ASG가 Desired Capacity 2를 복구하기 위해 신규 Nginx 인스턴스 생성
+5. 신규 인스턴스가 Target Group에 등록
+6. Health Check 통과 후 정상 Target으로 트래픽 처리
+7. 최종 Target Group 2 of 2 healthy 복구
+
+이 구조에서 Public ALB는 정상 Target으로 트래픽을 전달하여 서비스 지속을 담당하고, ASG는 부족해진 인스턴스 수를 복구하는 역할을 담당한다.
+
+실제 장애시험에서는 Nginx 인스턴스 종료 시간대에도 Public ALB의 HTTP 2XX 응답이 계속 기록되었으며, 이후 ASG가 신규 Nginx 인스턴스를 생성하고 최종적으로 Target Group이 2 of 2 healthy 상태로 복구되는 것을 확인하였다.
+
+### 발표 답변
+
+"Nginx 한 대가 종료되면 Public ALB는 정상 상태인 다른 Nginx로 요청을 전달해 서비스를 계속 유지합니다. 종료되거나 비정상 상태인 Target은 트래픽 대상에서 제외되고, ASG는 Desired Capacity 2를 맞추기 위해 새로운 Nginx 인스턴스를 생성합니다. 신규 인스턴스가 Health Check를 통과하면 다시 정상 Target으로 트래픽을 처리하며, 실제 시험에서도 장애 시간대에 HTTP 2XX 응답이 유지되고 최종적으로 2 of 2 healthy까지 복구되는 것을 확인했습니다."
+
+
+### Q6. Golden AMI와 Launch Template의 역할 차이는?
+
+Golden AMI와 Launch Template은 신규 EC2를 동일한 구성으로 생성하기 위해 함께 사용하지만 역할은 서로 다르다.
+
+Golden AMI는 Nginx와 필요한 설정이 준비된 서버의 기준 이미지이다.
+
+Launch Template은 EC2를 어떤 조건으로 생성할 것인지 정의한다.
+
+예를 들면 다음과 같은 정보가 Launch Template에 포함된다.
+
+- 사용할 AMI
+- Instance Type
+- Security Group
+- 기타 EC2 생성 설정
+
+현재 Nginx Launch Template Version 3은 Golden AMI v3를 사용하며, ASG는 이 Launch Template을 기반으로 신규 Nginx 인스턴스를 생성한다.
+
+### 발표 답변
+
+"Golden AMI는 Nginx와 필요한 설정이 준비된 서버의 표준 이미지이고, Launch Template은 그 AMI를 포함해 어떤 조건으로 EC2를 생성할지를 정의합니다. ASG는 Launch Template을 사용해서 장애가 발생했을 때 동일한 구성의 Nginx 서버를 다시 생성합니다."
+
+
+### Q7. 장애가 발생했는데 CloudWatch ALARM이 항상 발생하지 않을 수도 있는 이유는?
+
+CloudWatch Alarm은 장애 발생 자체만으로 즉시 ALARM 상태가 되는 것이 아니라 설정된 Metric, Period, Evaluation Period 등의 평가 조건을 만족해야 상태가 변경된다.
+
+이번 Nginx 장애시험에서는 ASG의 자동복구가 빠르게 진행되었다.
+
+장애 및 복구 과정에서는 다음과 같은 동작이 발생할 수 있다.
+
+- Nginx 인스턴스 1대 장애 또는 종료
+- 장애 상황에서 HealthyHostCount가 일시적으로 감소할 수 있음
+- ASG가 부족해진 인스턴스 수를 복구하기 위해 신규 인스턴스 생성
+- 신규 Target이 Health Check 통과
+- Alarm의 평가 조건을 충족하기 전에 정상 상태로 복구될 수 있음
+
+따라서 실제 장애가 발생했더라도 장애 지속시간이 CloudWatch Alarm의 평가기간보다 짧으면 ALARM 상태 전환이나 알림 발송이 발생하지 않을 수 있다.
+
+이는 장애 감지가 실패했다는 의미가 아니라 CloudWatch Alarm의 평가 조건과 실제 장애 및 복구 시간 사이의 관계에 따른 결과이다.
+
+SNS 자체의 ALARM/OK 이메일 알림 동작은 별도 시험에서 정상 동작을 검증하였다.
+
+### 발표 답변
+
+"CloudWatch Alarm은 장애가 발생하는 즉시 무조건 ALARM으로 전환되는 것이 아니라 설정된 평가기간과 임계조건을 충족해야 합니다. 장애 상황에서는 HealthyHostCount가 일시적으로 감소할 수 있지만, ASG의 자동복구가 빠르면 Alarm의 평가 조건을 충족하기 전에 정상화될 수도 있습니다. 따라서 장애가 발생했더라도 ALARM이 항상 발생하는 것은 아니며, SNS의 ALARM/OK 이메일 알림 기능 자체는 별도 시험에서 정상 동작을 확인했습니다."
