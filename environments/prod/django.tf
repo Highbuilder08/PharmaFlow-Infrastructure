@@ -45,32 +45,3 @@ resource "aws_instance" "django_base" {
     Role        = "django"
   }
 }
-
-# ---------------------------------------------------------
-# ⚠️ 초기 구축 단계 전용 임시 규칙 — Internal ALB 생성 후 삭제할 것
-#
-# 최종 구조:  Nginx → Internal ALB → Django:8000
-# 초기 구조:  Nginx → Django Base EC2 사설IP:8000   (Internal ALB 아직 없음)
-#
-# security_group.tf 의 django_app 규칙은 Internal ALB SG 만 8000 을 허용하므로,
-# Internal ALB 가 없는 지금은 Nginx 에서 Django 로 아예 닿지 못한다.
-# 기준 서버 동작 검증을 위해 Nginx SG → Django 8000 을 임시로 연다.
-#
-# Internal ALB 가 올라오면 이 블록만 지우면 최종 구조로 돌아간다.
-# ---------------------------------------------------------
-
-resource "aws_vpc_security_group_ingress_rule" "django_app_from_nginx_temp" {
-  security_group_id            = aws_security_group.django.id
-  referenced_security_group_id = aws_security_group.nginx.id
-
-  from_port   = 8000
-  ip_protocol = "tcp"
-  to_port     = 8000
-
-  tags = {
-    Name        = "django-8000-from-nginx-TEMP"
-    Project     = "PharmaFlow"
-    Environment = "prod"
-    Temporary   = "remove-after-internal-alb"
-  }
-}

@@ -63,12 +63,12 @@ output "nginx_base_private_ip" {
 
 output "rds_endpoint" {
   description = "RDS MariaDB endpoint"
-  value       = aws_db_instance.pharmaflow.address
+  value       = aws_db_instance.pharmaflow_db_tier.address
 }
 
 output "rds_port" {
   description = "RDS MariaDB port"
-  value       = aws_db_instance.pharmaflow.port
+  value       = aws_db_instance.pharmaflow_db_tier.port
 }
 
 # ── EFS ───────────────────────────────────────────────
@@ -95,50 +95,15 @@ output "public_alb_dns_name" {
   value       = aws_lb.public.dns_name
 }
 
-# ── AMI ───────────────────────────────────────────────
-
-output "django_golden_ami_id" {
-  description = "Golden AMI ID for Django"
-  value       = aws_ami_from_instance.django_golden.id
-}
-
-output "django_golden_ami_v2_id" {
-  description = "Django Golden AMI v2 ID"
-  value       = aws_ami_from_instance.django_golden_v2.id
-}
-
-output "django_golden_ami_v3_id" {
-  description = "Django Golden AMI v3 ID"
-  value       = aws_ami_from_instance.django_golden_v3.id
-}
-
-output "django_golden_ami_v4_id" {
-  description = "Django Golden AMI v4 ID"
-  value       = aws_ami_from_instance.django_golden_v4.id
-}
-
-output "django_golden_ami_v5_id" {
-  description = "Django Golden AMI v5 ID"
-  value       = aws_ami_from_instance.django_golden_v5.id
-}
+# ── Golden AMI ──────────────────────────────────────────
 
 output "django_golden_ami_v6_id" {
-  description = "Django Golden AMI v6 ID"
+  description = "Final Django Golden AMI v6 ID"
   value       = aws_ami_from_instance.django_golden_v6.id
 }
 
-output "nginx_golden_ami_id" {
-  description = "Golden AMI ID for Nginx"
-  value       = aws_ami_from_instance.nginx_golden.id
-}
-
-output "nginx_golden_ami_v2_id" {
-  description = "Nginx Golden AMI v2 ID"
-  value       = aws_ami_from_instance.nginx_golden_v2.id
-}
-
 output "nginx_golden_ami_v3_id" {
-  description = "Nginx Golden AMI v3 ID"
+  description = "Final Nginx Golden AMI v3 ID"
   value       = aws_ami_from_instance.nginx_golden_v3.id
 }
 
