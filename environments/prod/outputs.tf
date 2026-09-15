@@ -168,3 +168,15 @@ output "github_infra_cd_role_arn" {
   description = "IAM Role ARN for GitHub Actions Infrastructure CD via OIDC"
   value       = aws_iam_role.github_infra_cd.arn
 }
+
+# ── ECR ────────────────────────────────────────────
+
+output "ecr_django_repository_url" {
+  description = "ECR repository URL for PharmaFlow Django image"
+  value       = aws_ecr_repository.django.repository_url
+}
+
+output "ecr_nginx_repository_url" {
+  description = "ECR repository URL for PharmaFlow Nginx image"
+  value       = aws_ecr_repository.nginx.repository_url
+}
