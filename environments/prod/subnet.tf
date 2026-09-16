@@ -5,10 +5,11 @@ resource "aws_subnet" "public_a" {
   map_public_ip_on_launch = true
 
   tags = {
-    Name        = "pharmaflow-public-a"
-    Project     = "PharmaFlow"
-    Environment = "prod"
-    Type        = "public"
+    Name                     = "pharmaflow-public-a"
+    Project                  = "PharmaFlow"
+    Environment              = "prod"
+    Type                     = "public"
+    "kubernetes.io/role/elb" = "1"
   }
 }
 
@@ -19,10 +20,11 @@ resource "aws_subnet" "public_c" {
   map_public_ip_on_launch = true
 
   tags = {
-    Name        = "pharmaflow-public-c"
-    Project     = "PharmaFlow"
-    Environment = "prod"
-    Type        = "public"
+    Name                     = "pharmaflow-public-c"
+    Project                  = "PharmaFlow"
+    Environment              = "prod"
+    Type                     = "public"
+    "kubernetes.io/role/elb" = "1"
   }
 }
 
@@ -99,11 +101,12 @@ resource "aws_subnet" "app_private_a" {
   map_public_ip_on_launch = false
 
   tags = {
-    Name        = "pharmaflow-app-private-a"
-    Project     = "PharmaFlow"
-    Environment = "prod"
-    Type        = "app-private"
-    Tier        = "application"
+    Name                              = "pharmaflow-app-private-a"
+    Project                           = "PharmaFlow"
+    Environment                       = "prod"
+    Type                              = "app-private"
+    Tier                              = "application"
+    "kubernetes.io/role/internal-elb" = "1"
   }
 }
 
@@ -114,11 +117,12 @@ resource "aws_subnet" "app_private_c" {
   map_public_ip_on_launch = false
 
   tags = {
-    Name        = "pharmaflow-app-private-c"
-    Project     = "PharmaFlow"
-    Environment = "prod"
-    Type        = "app-private"
-    Tier        = "application"
+    Name                              = "pharmaflow-app-private-c"
+    Project                           = "PharmaFlow"
+    Environment                       = "prod"
+    Type                              = "app-private"
+    Tier                              = "application"
+    "kubernetes.io/role/internal-elb" = "1"
   }
 }
 
