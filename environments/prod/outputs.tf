@@ -180,3 +180,25 @@ output "ecr_nginx_repository_url" {
   description = "ECR repository URL for PharmaFlow Nginx image"
   value       = aws_ecr_repository.nginx.repository_url
 }
+
+# ── Amazon EKS ────────────────────────────────────────────
+
+output "eks_cluster_name" {
+  description = "PharmaFlow EKS cluster name"
+  value       = aws_eks_cluster.pharmaflow.name
+}
+
+output "eks_cluster_endpoint" {
+  description = "PharmaFlow EKS API server endpoint"
+  value       = aws_eks_cluster.pharmaflow.endpoint
+}
+
+output "eks_cluster_security_group_id" {
+  description = "PharmaFlow EKS cluster security group ID"
+  value       = aws_eks_cluster.pharmaflow.vpc_config[0].cluster_security_group_id
+}
+
+output "eks_node_group_name" {
+  description = "PharmaFlow EKS managed node group name"
+  value       = aws_eks_node_group.pharmaflow.node_group_name
+}
