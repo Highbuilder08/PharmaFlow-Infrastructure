@@ -45,7 +45,7 @@ resource "aws_eks_node_group" "pharmaflow" {
   ]
 
   instance_types = [
-    "t3.medium"
+    "t3.small"
   ]
 
   capacity_type = "ON_DEMAND"
