@@ -36,6 +36,7 @@ resource "aws_instance" "nat" {
 
     INTERFACE=$(ip route | awk '/default/ {print $5; exit}')
 
+    iptables -t nat -C POSTROUTING -o $INTERFACE -j MASQUERADE 2>/dev/null || \
     iptables -t nat -A POSTROUTING -o $INTERFACE -j MASQUERADE
 
     apt-get update
