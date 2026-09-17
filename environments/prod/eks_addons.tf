@@ -42,3 +42,18 @@ resource "aws_eks_addon" "efs_csi" {
     ManagedBy   = "Terraform"
   }
 }
+
+
+# ---------------------------------------------------------
+# Metrics Server
+# ---------------------------------------------------------
+
+resource "aws_eks_addon" "metrics_server" {
+  cluster_name  = aws_eks_cluster.pharmaflow.name
+  addon_name    = "metrics-server"
+  addon_version = "v0.9.0-eksbuild.11"
+
+  depends_on = [
+    aws_eks_node_group.pharmaflow
+  ]
+}
