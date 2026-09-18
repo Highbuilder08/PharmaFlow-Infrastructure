@@ -56,6 +56,14 @@ resource "aws_eks_node_group" "pharmaflow" {
     max_size     = 4
   }
 
+  # Cluster Autoscaler owns the runtime desired capacity.
+  # Terraform continues to manage the minimum and maximum boundaries.
+  lifecycle {
+    ignore_changes = [
+      scaling_config[0].desired_size
+    ]
+  }
+
   update_config {
     max_unavailable = 1
   }
