@@ -13,18 +13,18 @@ resource "aws_route53_zone" "pharmaflow" {
 }
 
 # ---------------------------------------------------------
-# Route53 Alias
-# pharmaflow.homes -> Public ALB
+# Route53 Application Alias
 # ---------------------------------------------------------
+#
+# The application alias is now owned by the EKS ingress path rather than
+# the legacy public ALB. Keep the existing Route53 record in AWS while
+# removing it from this Terraform state to prevent a future apply from
+# redirecting pharmaflow.homes back to the legacy ALB.
+#
+removed {
+  from = aws_route53_record.public_alb
 
-resource "aws_route53_record" "public_alb" {
-  zone_id = aws_route53_zone.pharmaflow.zone_id
-  name    = var.domain_name
-  type    = "A"
-
-  alias {
-    name                   = aws_lb.public.dns_name
-    zone_id                = aws_lb.public.zone_id
-    evaluate_target_health = true
+  lifecycle {
+    destroy = false
   }
 }
