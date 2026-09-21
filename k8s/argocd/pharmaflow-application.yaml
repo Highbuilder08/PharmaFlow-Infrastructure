@@ -17,5 +17,9 @@ spec:
     namespace: pharmaflow-dev
 
   syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+
     syncOptions:
       - CreateNamespace=false
