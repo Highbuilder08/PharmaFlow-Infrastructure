@@ -1,0 +1,21 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: pharmaflow
+  namespace: argocd
+
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/Highbuilder08/PharmaFlow.git
+    targetRevision: main
+    path: k8s/eks
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: pharmaflow-dev
+
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=false
