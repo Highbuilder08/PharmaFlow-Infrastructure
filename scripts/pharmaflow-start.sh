@@ -250,17 +250,17 @@ EKS_SCALING=$(get_eks_scaling)
 
 echo "현재 EKS scaling: $EKS_SCALING"
 
-if [ "$EKS_SCALING" = $'2\t4\t2' ]; then
-  echo "EKS Node Group은 이미 min=2 / desired=2 / max=4"
+if [ "$EKS_SCALING" = $'3\t4\t3' ]; then
+  echo "EKS Node Group은 이미 min=3 / desired=3 / max=4"
 else
   aws eks update-nodegroup-config \
     --region "$REGION" \
     --cluster-name "$EKS_CLUSTER" \
     --nodegroup-name "$EKS_NODEGROUP" \
-    --scaling-config minSize=2,maxSize=4,desiredSize=2 \
+    --scaling-config minSize=3,maxSize=4,desiredSize=3 \
     >/dev/null
 
-  echo "EKS Node Group → min=2 / desired=2 / max=4 요청 완료"
+  echo "EKS Node Group → min=3 / desired=3 / max=4 요청 완료"
 
   echo "Node Group ACTIVE 대기..."
 
@@ -277,14 +277,14 @@ fi
 # ---------------------------------------------------------
 
 echo
-echo "EKS backing ASG Desired=2 대기..."
+echo "EKS backing ASG Desired=3 대기..."
 
 for i in {1..60}; do
   EKS_ASG_DESIRED=$(get_eks_asg_desired)
 
-  echo "EKS backing ASG desired: $EKS_ASG_DESIRED / 2"
+  echo "EKS backing ASG desired: $EKS_ASG_DESIRED / 3"
 
-  if [ "$EKS_ASG_DESIRED" = "2" ]; then
+  if [ "$EKS_ASG_DESIRED" = "3" ]; then
     echo "EKS backing ASG 정상화 완료"
     break
   fi
@@ -309,9 +309,9 @@ for i in {1..60}; do
     --no-headers 2>/dev/null \
     | awk '$2=="Ready"{c++} END{print c+0}')
 
-  echo "EKS Ready Nodes: $READY_NODES / 2"
+  echo "EKS Ready Nodes: $READY_NODES / 3"
 
-  if [ "$READY_NODES" -ge 2 ]; then
+  if [ "$READY_NODES" -ge 3 ]; then
     echo "EKS Node 정상화 완료"
     break
   fi
@@ -515,7 +515,7 @@ fi
 
 echo "========================================"
 echo "Legacy ASG : Desired 2"
-echo "EKS Nodes  : Desired 2"
+echo "EKS Nodes  : Desired 3"
 echo "RDS        : available"
 
 if [ "$METRICS_OK" = true ]; then
