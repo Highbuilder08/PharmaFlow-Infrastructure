@@ -34,16 +34,11 @@ kube-state-metrics:
     limits:
       cpu: 100m
       memory: 128Mi
+# Disabled in Phase 1 because t3.small nodes are constrained by
+# the EKS 11-pod-per-node limit. Kubernetes resource metrics are
+# collected through kubelet/cAdvisor and kube-state-metrics first.
 nodeExporter:
-  enabled: true
-prometheus-node-exporter:
-  resources:
-    requests:
-      cpu: 25m
-      memory: 32Mi
-    limits:
-      cpu: 100m
-      memory: 64Mi
+  enabled: false
 prometheusOperator:
   enabled: true
   resources:
