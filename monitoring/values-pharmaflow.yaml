@@ -1,0 +1,77 @@
+# PharmaFlow lightweight Kubernetes monitoring
+# kube-prometheus-stack chart: 91.5.0
+#
+# Phase 1 design:
+# - Prometheus retention: 6h
+# - No persistent storage
+# - Alertmanager disabled (CloudWatch + SNS handle AWS infrastructure alerts)
+# - Grafana exposed only as ClusterIP
+# - Default Prometheus rules disabled to reduce cluster footprint
+# - EKS-managed controller-manager/scheduler/etcd scraping disabled
+#
+alertmanager:
+  enabled: false
+grafana:
+  enabled: true
+  service:
+    type: ClusterIP
+  persistence:
+    enabled: false
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+kubeStateMetrics:
+  enabled: true
+kube-state-metrics:
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+nodeExporter:
+  enabled: true
+prometheus-node-exporter:
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+prometheusOperator:
+  enabled: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+prometheus:
+  enabled: true
+  prometheusSpec:
+    retention: 6h
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+    storageSpec: {}
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeEtcd:
+  enabled: false
+defaultRules:
+  create: false
+kubeProxy:
+  enabled: false
