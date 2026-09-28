@@ -15,6 +15,11 @@ resource "aws_eks_cluster" "pharmaflow" {
     endpoint_private_access = true
     endpoint_public_access  = true
 
+    # Public Kubernetes API access is restricted to the same
+    # administrator CIDR used by Bastion and WireGuard.
+    public_access_cidrs = [
+      var.admin_cidr
+    ]
   }
 
   depends_on = [
