@@ -7,3 +7,7 @@ db_password = "YOUR_DB_PASSWORD"
 
 domain_name = "example.com"
 alert_email = "REPLACE-WITH-ALERT-EMAIL"
+
+# Pin the validated Ubuntu 24.04 AMI used by legacy EC2 instances.
+# Upgrade this value intentionally after testing a newer AMI.
+ubuntu_ami_id = "REPLACE-WITH-VALIDATED-UBUNTU-24.04-AMI-ID"
