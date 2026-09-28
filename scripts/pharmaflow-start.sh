@@ -250,17 +250,17 @@ EKS_SCALING=$(get_eks_scaling)
 
 echo "현재 EKS scaling: $EKS_SCALING"
 
-if [ "$EKS_SCALING" = $'3\t4\t3' ]; then
-  echo "EKS Node Group은 이미 min=3 / desired=3 / max=4"
+if [ "$EKS_SCALING" = $'3\t5\t3' ]; then
+  echo "EKS Node Group은 이미 min=3 / desired=3 / max=5"
 else
   aws eks update-nodegroup-config \
     --region "$REGION" \
     --cluster-name "$EKS_CLUSTER" \
     --nodegroup-name "$EKS_NODEGROUP" \
-    --scaling-config minSize=3,maxSize=4,desiredSize=3 \
+    --scaling-config minSize=3,maxSize=5,desiredSize=3 \
     >/dev/null
 
-  echo "EKS Node Group → min=3 / desired=3 / max=4 요청 완료"
+  echo "EKS Node Group → min=3 / desired=3 / max=5 요청 완료"
 
   echo "Node Group ACTIVE 대기..."
 
