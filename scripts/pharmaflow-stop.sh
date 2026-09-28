@@ -158,8 +158,8 @@ echo "[1/5] EKS / Legacy ASG 축소 요청"
 
 EKS_SCALING=$(get_eks_scaling)
 
-if [ "$EKS_SCALING" = $'0\t4\t0' ]; then
-  echo "EKS Node Group은 이미 min=0 / desired=0 / max=4"
+if [ "$EKS_SCALING" = $'0\t5\t0' ]; then
+  echo "EKS Node Group은 이미 min=0 / desired=0 / max=5"
 else
   echo "현재 EKS scaling: $EKS_SCALING"
 
@@ -167,10 +167,10 @@ else
     --region "$REGION" \
     --cluster-name "$EKS_CLUSTER" \
     --nodegroup-name "$EKS_NODEGROUP" \
-    --scaling-config minSize=0,maxSize=4,desiredSize=0 \
+    --scaling-config minSize=0,maxSize=5,desiredSize=0 \
     >/dev/null
 
-  echo "EKS Node Group → min=0 / desired=0 / max=4 요청 완료"
+  echo "EKS Node Group → min=0 / desired=0 / max=5 요청 완료"
 fi
 
 # ---------------------------------------------------------
