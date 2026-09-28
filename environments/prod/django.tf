@@ -9,12 +9,12 @@
 #       - 아웃바운드는 Private Route Table → NAT Instance 로 나간다
 #         (apt / git clone / pip 가 이 경로를 쓴다)
 #
-# AMI: nat.tf 의 data.aws_ami.ubuntu 를 그대로 재사용한다.
-#      (Ubuntu 24.04 Noble — Django 6.0 이 Python 3.12+ 를 요구하므로 22.04 는 불가)
+# AMI: 검증된 Ubuntu 24.04 Noble AMI를 ubuntu_ami_id 변수로 고정한다.
+#      AMI 업그레이드는 사전 검증 후 명시적으로 수행한다.
 # ---------------------------------------------------------
 
 resource "aws_instance" "django_base" {
-  ami                         = data.aws_ami.ubuntu.id
+  ami                         = var.ubuntu_ami_id
   instance_type               = "t3.small"
   subnet_id                   = aws_subnet.private_a.id
   vpc_security_group_ids      = [aws_security_group.django.id]

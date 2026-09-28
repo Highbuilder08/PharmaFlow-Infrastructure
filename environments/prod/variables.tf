@@ -34,3 +34,8 @@ variable "alert_email" {
   type        = string
   sensitive   = true
 }
+
+variable "ubuntu_ami_id" {
+  description = "Pinned Ubuntu 24.04 AMI ID for legacy EC2 instances"
+  type        = string
+}
